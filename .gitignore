@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+parsers/__pycache__/
+*.pyc
+*.pyo
+sample-config.xml
+*.xml
