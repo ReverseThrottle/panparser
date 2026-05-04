@@ -16,17 +16,38 @@ from panparser import load_config, find_roots
 from parsers._data import (
     get_address_groups,
     get_addresses,
+    get_app_override_rules,
     get_application_filters,
     get_application_groups,
     get_applications,
+    get_auth_profiles,
+    get_auth_rules,
+    get_bgp_peers,
+    get_certificates,
+    get_decryption_rules,
+    get_dos_rules,
+    get_gp_gateways,
+    get_gp_portals,
+    get_ike_crypto,
+    get_ike_gateways,
     get_interfaces,
+    get_ipsec_crypto,
+    get_ipsec_tunnels,
     get_nat_rules,
+    get_ospf_areas,
+    get_pbf_rules,
     get_profiles,
+    get_qos_rules,
+    get_redist_profiles,
     get_routing,
     get_security_rules,
+    get_server_profiles,
     get_service_groups,
     get_services,
+    get_ssl_profiles,
     get_tags,
+    get_url_categories,
+    get_zone_protection,
     get_zones,
 )
 
@@ -41,6 +62,7 @@ SECTIONS: list[dict[str, Any]] = [
         "title": "Addresses",
         "columns": ["#", "Name", "Scope", "Type", "Value", "Description"],
         "getter": "get_addresses",
+        "roots": "vsys_shared",
         "row_fn": lambda i, r: (
             str(i + 1), r[1], r[0], r[2], r[3], r[4]
         ),
@@ -51,6 +73,7 @@ SECTIONS: list[dict[str, Any]] = [
         "title": "Addr Groups",
         "columns": ["#", "Name", "Scope", "Type", "Members", "Description"],
         "getter": "get_address_groups",
+        "roots": "vsys_shared",
         "row_fn": lambda i, r: (
             str(i + 1), r[1], r[0], r[2], r[3], r[4]
         ),
@@ -61,6 +84,7 @@ SECTIONS: list[dict[str, Any]] = [
         "title": "Services",
         "columns": ["#", "Name", "Scope", "Protocol", "Dst Port", "Src Port", "Description"],
         "getter": "get_services",
+        "roots": "vsys_shared",
         "row_fn": lambda i, r: (
             str(i + 1), r[1], r[0], r[2], r[3], r[4], r[5]
         ),
@@ -71,6 +95,7 @@ SECTIONS: list[dict[str, Any]] = [
         "title": "Svc Groups",
         "columns": ["#", "Name", "Scope", "Members", "Description"],
         "getter": "get_service_groups",
+        "roots": "vsys_shared",
         "row_fn": lambda i, r: (
             str(i + 1), r[1], r[0], r[2], r[3]
         ),
@@ -81,6 +106,7 @@ SECTIONS: list[dict[str, Any]] = [
         "title": "Security Rules",
         "columns": ["#", "Name", "Src Zone", "Dst Zone", "Src Addr", "Dst Addr", "App", "Service", "Action", "Profile"],
         "getter": "get_security_rules",
+        "roots": "vsys",
         "row_fn": None,  # custom — see _security_row
         "detail_keys": ["#", "Name", "Disabled", "Src Zone", "Dst Zone", "Src Addr", "Dst Addr", "App", "Service", "Action", "Profile"],
     },
@@ -89,14 +115,25 @@ SECTIONS: list[dict[str, Any]] = [
         "title": "NAT Rules",
         "columns": ["#", "Name", "Src Zone", "Dst Zone", "Src Addr", "Dst Addr", "Dst Iface", "Type", "Translated To"],
         "getter": "get_nat_rules",
+        "roots": "vsys",
         "row_fn": None,  # custom — see _nat_row
         "detail_keys": ["#", "Name", "Disabled", "Src Zone", "Dst Zone", "Src Addr", "Dst Addr", "Dst Iface", "NAT Type", "Translated"],
+    },
+    {
+        "id": "dos",
+        "title": "DoS Rules",
+        "columns": ["#", "Name", "From Zone", "To Zone", "Src Addr", "Dst Addr", "Service", "Protection", "Action", "Log Setting"],
+        "getter": "get_dos_rules",
+        "roots": "vsys",
+        "row_fn": lambda i, r: (str(i + 1), r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9]),
+        "detail_keys": ["#", "Name", "From Zone", "To Zone", "Src Addr", "Dst Addr", "Service", "Protection Type", "Action", "Log Setting", "Description"],
     },
     {
         "id": "zones",
         "title": "Zones",
         "columns": ["Name", "Type", "Interfaces", "Zone Protect Profile", "Log Setting"],
         "getter": "get_zones",
+        "roots": "network",
         "row_fn": lambda i, r: (r[0], r[1], r[2], r[3], r[4]),
         "detail_keys": ["Name", "Type", "Interfaces", "Zone Protection Profile", "Log Setting"],
     },
@@ -105,6 +142,7 @@ SECTIONS: list[dict[str, Any]] = [
         "title": "Interfaces",
         "columns": ["Name", "Type", "IP / Mode", "Subinterfaces", "Comment"],
         "getter": "get_interfaces",
+        "roots": "network",
         "row_fn": lambda i, r: (r[0], r[1], r[2], r[3], r[4]),
         "detail_keys": ["Name", "Type", "IP / Mode", "Subinterfaces", "Comment"],
     },
@@ -113,6 +151,7 @@ SECTIONS: list[dict[str, Any]] = [
         "title": "Routing",
         "columns": ["VR", "Route Name", "Destination", "Next Hop", "Interface", "Metric", "Admin Dist"],
         "getter": "get_routing",
+        "roots": "network",
         "row_fn": lambda i, r: (r[0], r[1], r[2], r[3], r[4], r[5], r[6]),
         "detail_keys": ["Virtual Router", "Route Name", "Destination", "Next Hop", "Interface", "Metric", "Admin Dist"],
     },
@@ -121,6 +160,7 @@ SECTIONS: list[dict[str, Any]] = [
         "title": "Tags",
         "columns": ["#", "Name", "Scope", "Color", "Comments"],
         "getter": "get_tags",
+        "roots": "vsys_shared",
         "row_fn": lambda i, r: (str(i + 1), r[1], r[0], r[2], r[3]),
         "detail_keys": ["Name", "Scope", "Color", "Comments"],
     },
@@ -129,6 +169,7 @@ SECTIONS: list[dict[str, Any]] = [
         "title": "Profiles",
         "columns": ["Profile Type", "Scope", "Name", "Summary", "Description"],
         "getter": "get_profiles",
+        "roots": "vsys_shared",
         "row_fn": lambda i, r: (r[0], r[1], r[2], r[3], r[4]),
         "detail_keys": ["Profile Type", "Scope", "Name", "Summary", "Description"],
     },
@@ -137,6 +178,7 @@ SECTIONS: list[dict[str, Any]] = [
         "title": "Applications",
         "columns": ["#", "Name", "Scope", "Category", "Subcategory", "Technology", "Risk", "Default Ports"],
         "getter": "get_applications",
+        "roots": "vsys_shared",
         "row_fn": lambda i, r: (str(i + 1), r[1], r[0], r[2], r[3], r[4], r[5], r[6]),
         "detail_keys": ["Name", "Scope", "Category", "Subcategory", "Technology", "Risk", "Default Ports"],
     },
@@ -145,6 +187,7 @@ SECTIONS: list[dict[str, Any]] = [
         "title": "App Groups",
         "columns": ["#", "Name", "Scope", "Members"],
         "getter": "get_application_groups",
+        "roots": "vsys_shared",
         "row_fn": lambda i, r: (str(i + 1), r[1], r[0], r[2]),
         "detail_keys": ["Name", "Scope", "Members"],
     },
@@ -153,8 +196,189 @@ SECTIONS: list[dict[str, Any]] = [
         "title": "App Filters",
         "columns": ["Name", "Scope", "Category", "Subcategory", "Technology", "Risk", "Characteristic"],
         "getter": "get_application_filters",
+        "roots": "vsys_shared",
         "row_fn": lambda i, r: (r[1], r[0], r[2], r[3], r[4], r[5], r[6]),
         "detail_keys": ["Name", "Scope", "Category", "Subcategory", "Technology", "Risk", "Characteristic"],
+    },
+    {
+        "id": "certificates",
+        "title": "Certificates",
+        "columns": ["Name", "Common Name", "Issuer", "Valid From", "Valid Until", "CA", "Algorithm"],
+        "getter": "get_certificates",
+        "roots": "shared",
+        "row_fn": lambda i, r: (r[0], r[1], r[2], r[3], r[4], r[5], r[6]),
+        "detail_keys": ["Name", "Common Name", "Issuer", "Valid From", "Valid Until", "CA", "Algorithm"],
+    },
+    {
+        "id": "auth-profiles",
+        "title": "Auth Profiles",
+        "columns": ["Name", "Method", "MFA", "Allow List", "User Domain"],
+        "getter": "get_auth_profiles",
+        "roots": "shared",
+        "row_fn": lambda i, r: (r[0], r[1], r[2], r[3], r[4]),
+        "detail_keys": ["Name", "Method", "MFA Enabled", "Allow List", "User Domain"],
+    },
+    {
+        "id": "ssl-profiles",
+        "title": "SSL Profiles",
+        "columns": ["Name", "Certificate", "Min Version", "Max Version"],
+        "getter": "get_ssl_profiles",
+        "roots": "shared",
+        "row_fn": lambda i, r: (r[0], r[1], r[2], r[3]),
+        "detail_keys": ["Name", "Certificate", "Min Version", "Max Version"],
+    },
+    {
+        "id": "zone-protection",
+        "title": "Zone Protection",
+        "columns": ["Name", "Flood Protection", "Discard IP Spoof", "Discard IP Frag", "Strict IP Check"],
+        "getter": "get_zone_protection",
+        "roots": "network",
+        "row_fn": lambda i, r: (r[0], r[1], r[2], r[3], r[4]),
+        "detail_keys": ["Name", "Flood Protection", "Discard IP Spoof", "Discard IP Frag", "Strict IP Check"],
+    },
+    {
+        "id": "gp-gateways",
+        "title": "GP Gateways",
+        "columns": ["Name", "SSL/TLS Profile", "Tunnel Mode", "Tunnel Interface", "Client Auth"],
+        "getter": "get_gp_gateways",
+        "roots": "vsys",
+        "row_fn": lambda i, r: (r[0], r[1], r[2], r[3], r[4]),
+        "detail_keys": ["Name", "SSL/TLS Profile", "Tunnel Mode", "Tunnel Interface", "Client Auth Entries"],
+    },
+    {
+        "id": "gp-portals",
+        "title": "GP Portals",
+        "columns": ["Name", "Local Address", "SSL/TLS Profile", "Client Auth"],
+        "getter": "get_gp_portals",
+        "roots": "vsys",
+        "row_fn": lambda i, r: (r[0], r[1], r[3], r[2]),
+        "detail_keys": ["Name", "Local Address", "Client Auth Entries", "SSL/TLS Profile"],
+    },
+    {
+        "id": "decryption",
+        "title": "Decryption",
+        "columns": ["#", "Name", "From Zone", "To Zone", "Src Addr", "Dst Addr", "Type", "Profile", "Action", "Disabled"],
+        "getter": "get_decryption_rules",
+        "roots": "vsys",
+        "row_fn": lambda i, r: (str(r[0]), r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], "yes" if r[9] else ""),
+        "detail_keys": ["#", "Name", "From Zone", "To Zone", "Src Addr", "Dst Addr", "Type", "Profile", "Action", "Disabled"],
+    },
+    {
+        "id": "pbf",
+        "title": "PBF Rules",
+        "columns": ["#", "Name", "From Zone", "Src Addr", "Dst Addr", "App", "Service", "Action", "Egress Iface", "Nexthop"],
+        "getter": "get_pbf_rules",
+        "roots": "vsys",
+        "row_fn": lambda i, r: (str(r[0]), r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9]),
+        "detail_keys": ["#", "Name", "From Zone", "Src Addr", "Dst Addr", "App", "Service", "Action", "Egress Iface", "Nexthop"],
+    },
+    {
+        "id": "app-override",
+        "title": "App Override",
+        "columns": ["#", "Name", "From Zone", "To Zone", "Src Addr", "Dst Addr", "Protocol", "Port", "Application", "Disabled"],
+        "getter": "get_app_override_rules",
+        "roots": "vsys",
+        "row_fn": lambda i, r: (str(r[0]), r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], "yes" if r[9] else ""),
+        "detail_keys": ["#", "Name", "From Zone", "To Zone", "Src Addr", "Dst Addr", "Protocol", "Port", "Application", "Disabled"],
+    },
+    {
+        "id": "auth-rules",
+        "title": "Auth Rules",
+        "columns": ["#", "Name", "From Zone", "To Zone", "Src Addr", "Dst Addr", "Src User", "Service", "Auth Enforcement", "Log Setting", "Disabled"],
+        "getter": "get_auth_rules",
+        "roots": "vsys",
+        "row_fn": lambda i, r: (str(r[0]), r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9], "yes" if r[10] else ""),
+        "detail_keys": ["#", "Name", "From Zone", "To Zone", "Src Addr", "Dst Addr", "Src User", "Service", "Auth Enforcement", "Log Setting", "Disabled"],
+    },
+    {
+        "id": "qos-rules",
+        "title": "QoS Rules",
+        "columns": ["#", "Name", "From Zone", "To Zone", "Src Addr", "Dst Addr", "App", "Service", "Class", "Schedule"],
+        "getter": "get_qos_rules",
+        "roots": "vsys",
+        "row_fn": lambda i, r: (str(r[0]), r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9]),
+        "detail_keys": ["#", "Name", "From Zone", "To Zone", "Src Addr", "Dst Addr", "App", "Service", "Class", "Schedule"],
+    },
+    {
+        "id": "url-categories",
+        "title": "URL Categories",
+        "columns": ["Name", "Type", "URL Count", "Description"],
+        "getter": "get_url_categories",
+        "roots": "vsys",
+        "row_fn": lambda i, r: (r[0], r[1], r[2], r[3]),
+        "detail_keys": ["Name", "Type", "URL Count", "Description"],
+    },
+    {
+        "id": "server-profiles",
+        "title": "Server Profiles",
+        "columns": ["Type", "Name", "Servers", "Details"],
+        "getter": "get_server_profiles",
+        "roots": "shared",
+        "row_fn": lambda i, r: (r[0], r[1], r[2], r[3]),
+        "detail_keys": ["Profile Type", "Name", "Server Count", "Details"],
+    },
+    {
+        "id": "ike-gateways",
+        "title": "IKE Gateways",
+        "columns": ["Name", "Peer IP", "Local IP", "Local Iface", "Auth Type", "IKE Version", "Disabled"],
+        "getter": "get_ike_gateways",
+        "roots": "network",
+        "row_fn": lambda i, r: (r[0], r[1], r[2], r[3], r[4], r[5], "yes" if r[6] else ""),
+        "detail_keys": ["Name", "Peer IP", "Local IP", "Local Iface", "Auth Type", "IKE Version", "Disabled"],
+    },
+    {
+        "id": "ike-crypto",
+        "title": "IKE Crypto",
+        "columns": ["Name", "Encryption", "Hash", "DH Group", "Lifetime"],
+        "getter": "get_ike_crypto",
+        "roots": "network",
+        "row_fn": lambda i, r: (r[0], r[1], r[2], r[3], r[4]),
+        "detail_keys": ["Name", "Encryption", "Hash", "DH Group", "Lifetime"],
+    },
+    {
+        "id": "ipsec-crypto",
+        "title": "IPSec Crypto",
+        "columns": ["Name", "ESP Encryption", "ESP Auth", "DH Group", "Lifetime"],
+        "getter": "get_ipsec_crypto",
+        "roots": "network",
+        "row_fn": lambda i, r: (r[0], r[1], r[2], r[3], r[4]),
+        "detail_keys": ["Name", "ESP Encryption", "ESP Auth", "DH Group", "Lifetime"],
+    },
+    {
+        "id": "ipsec-tunnels",
+        "title": "IPSec Tunnels",
+        "columns": ["Name", "Tunnel Iface", "IKE Gateway", "IPSec Crypto Profile", "Tunnel Monitor"],
+        "getter": "get_ipsec_tunnels",
+        "roots": "network",
+        "row_fn": lambda i, r: (r[0], r[1], r[2], r[3], r[4]),
+        "detail_keys": ["Name", "Tunnel Interface", "IKE Gateway", "IPSec Crypto Profile", "Tunnel Monitor"],
+    },
+    {
+        "id": "bgp-peers",
+        "title": "BGP Peers",
+        "columns": ["VR", "Peer Group", "Peer Name", "Peer AS", "Local IP", "Peer IP", "Enabled"],
+        "getter": "get_bgp_peers",
+        "roots": "network",
+        "row_fn": lambda i, r: (r[0], r[1], r[2], r[3], r[4], r[5], r[6]),
+        "detail_keys": ["VR", "Peer Group", "Peer Name", "Peer AS", "Local IP", "Peer IP", "Enabled"],
+    },
+    {
+        "id": "ospf-areas",
+        "title": "OSPF Areas",
+        "columns": ["VR", "Area ID", "Interface", "Enabled", "Passive", "Metric", "Link Type"],
+        "getter": "get_ospf_areas",
+        "roots": "network",
+        "row_fn": lambda i, r: (r[0], r[1], r[2], r[3], r[4], r[5], r[6]),
+        "detail_keys": ["VR", "Area ID", "Interface", "Enabled", "Passive", "Metric", "Link Type"],
+    },
+    {
+        "id": "redist-profiles",
+        "title": "Redist Profiles",
+        "columns": ["VR", "Name", "Action", "Filter Type", "Filter Value"],
+        "getter": "get_redist_profiles",
+        "roots": "network",
+        "row_fn": lambda i, r: (r[0], r[1], r[2], r[3], r[4]),
+        "detail_keys": ["VR", "Name", "Action", "Filter Type", "Filter Value"],
     },
 ]
 
@@ -165,6 +389,7 @@ GETTERS = {
     "get_service_groups": get_service_groups,
     "get_security_rules": get_security_rules,
     "get_nat_rules": get_nat_rules,
+    "get_dos_rules": get_dos_rules,
     "get_zones": get_zones,
     "get_interfaces": get_interfaces,
     "get_routing": get_routing,
@@ -173,6 +398,26 @@ GETTERS = {
     "get_applications": get_applications,
     "get_application_groups": get_application_groups,
     "get_application_filters": get_application_filters,
+    "get_certificates": get_certificates,
+    "get_auth_profiles": get_auth_profiles,
+    "get_ssl_profiles": get_ssl_profiles,
+    "get_zone_protection": get_zone_protection,
+    "get_gp_gateways": get_gp_gateways,
+    "get_gp_portals": get_gp_portals,
+    "get_decryption_rules": get_decryption_rules,
+    "get_pbf_rules": get_pbf_rules,
+    "get_app_override_rules": get_app_override_rules,
+    "get_auth_rules": get_auth_rules,
+    "get_qos_rules": get_qos_rules,
+    "get_url_categories": get_url_categories,
+    "get_server_profiles": get_server_profiles,
+    "get_ike_gateways": get_ike_gateways,
+    "get_ike_crypto": get_ike_crypto,
+    "get_ipsec_crypto": get_ipsec_crypto,
+    "get_ipsec_tunnels": get_ipsec_tunnels,
+    "get_bgp_peers": get_bgp_peers,
+    "get_ospf_areas": get_ospf_areas,
+    "get_redist_profiles": get_redist_profiles,
 }
 
 
@@ -263,14 +508,16 @@ class PanosViewerApp(App):
         vsys_root, shared_root, network_root = self._roots
 
         # Load all data up front
+        roots_map = {
+            "vsys":        (vsys_root,),
+            "shared":      (shared_root,),
+            "network":     (network_root,),
+            "vsys_shared": (vsys_root, shared_root),
+        }
         for sec in SECTIONS:
             getter_fn = GETTERS[sec["getter"]]
-            if sec["getter"] in ("get_security_rules", "get_nat_rules"):
-                self._section_data[sec["id"]] = getter_fn(vsys_root)
-            elif sec["getter"] in ("get_zones", "get_interfaces", "get_routing"):
-                self._section_data[sec["id"]] = getter_fn(network_root)
-            else:
-                self._section_data[sec["id"]] = getter_fn(vsys_root, shared_root)
+            args = roots_map[sec.get("roots", "vsys_shared")]
+            self._section_data[sec["id"]] = getter_fn(*args)
 
         # Set up columns and populate all tables
         for sec in SECTIONS:
@@ -313,7 +560,7 @@ class PanosViewerApp(App):
         if event.tab is None:
             return
         # tab id is "tab-{section_id}"
-        section_id = event.tab.id.removeprefix("tab-")
+        section_id = event.pane.id.removeprefix("tab-")
         self._active_section_id = section_id
         full = self._section_data.get(section_id, [])
         dt = self.query_one(f"#dt-{section_id}", DataTable)

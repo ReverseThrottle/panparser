@@ -22,7 +22,7 @@ def render_nat_rules(vsys_root: Element | None, console, grep: str | None = None
         console.print("[dim]No vsys configuration found.[/dim]")
         return
 
-    rules_container = vsys_root.find("nat/rules")
+    rules_container = vsys_root.find("rulebase/nat/rules") or vsys_root.find("nat/rules")
     if rules_container is None:
         console.print("[dim]No NAT rules found.[/dim]")
         return

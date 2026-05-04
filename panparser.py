@@ -24,6 +24,24 @@ from parsers.profiles import render_profiles
 from parsers.applications import (
     render_applications, render_application_groups, render_application_filters
 )
+from parsers.dos import render_dos_rules
+from parsers.certificates import render_certificates
+from parsers.auth_profiles import render_auth_profiles
+from parsers.ssl_profiles import render_ssl_profiles
+from parsers.zone_protection import render_zone_protection
+from parsers.globalprotect import render_gp_gateways, render_gp_portals
+from parsers.decryption import render_decryption_rules
+from parsers.pbf import render_pbf_rules
+from parsers.app_override import render_app_override_rules
+from parsers.auth_rules import render_auth_rules
+from parsers.qos_rules import render_qos_rules
+from parsers.url_categories import render_url_categories
+from parsers.server_profiles import render_server_profiles
+from parsers.ike import render_ike_gateways, render_ike_crypto, render_ipsec_crypto
+from parsers.ipsec import render_ipsec_tunnels
+from parsers.bgp import render_bgp_peers
+from parsers.ospf import render_ospf_areas
+from parsers.redist import render_redist_profiles
 
 SECTIONS = [
     "addresses",
@@ -32,6 +50,7 @@ SECTIONS = [
     "service-groups",
     "security-rules",
     "nat-rules",
+    "dos-rules",
     "zones",
     "interfaces",
     "routing",
@@ -40,6 +59,26 @@ SECTIONS = [
     "applications",
     "app-groups",
     "app-filters",
+    "certificates",
+    "auth-profiles",
+    "ssl-profiles",
+    "zone-protection",
+    "gp-gateways",
+    "gp-portals",
+    "decryption",
+    "pbf",
+    "app-override",
+    "auth-rules",
+    "qos-rules",
+    "url-categories",
+    "server-profiles",
+    "ike-gateways",
+    "ike-crypto",
+    "ipsec-crypto",
+    "ipsec-tunnels",
+    "bgp-peers",
+    "ospf-areas",
+    "redist-profiles",
 ]
 
 
@@ -168,6 +207,8 @@ def main() -> None:
                                    render_security_rules(vsys_root, console, grep)),
         "nat-rules":      lambda: (section_header(console, "NAT Policy"),
                                    render_nat_rules(vsys_root, console, grep)),
+        "dos-rules":      lambda: (section_header(console, "DoS Protection Rules"),
+                                   render_dos_rules(vsys_root, console, grep)),
         "zones":          lambda: (section_header(console, "Security Zones"),
                                    render_zones(network_root, console, grep)),
         "interfaces":     lambda: (section_header(console, "Interfaces"),
@@ -184,6 +225,46 @@ def main() -> None:
                                    render_application_groups(vsys_root, shared_root, console, grep)),
         "app-filters":    lambda: (section_header(console, "Application Filters"),
                                    render_application_filters(vsys_root, shared_root, console, grep)),
+        "certificates":   lambda: (section_header(console, "Certificates"),
+                                   render_certificates(shared_root, console, grep)),
+        "auth-profiles":  lambda: (section_header(console, "Authentication Profiles"),
+                                   render_auth_profiles(shared_root, console, grep)),
+        "ssl-profiles":   lambda: (section_header(console, "SSL/TLS Service Profiles"),
+                                   render_ssl_profiles(shared_root, console, grep)),
+        "zone-protection": lambda: (section_header(console, "Zone Protection Profiles"),
+                                    render_zone_protection(network_root, console, grep)),
+        "gp-gateways":    lambda: (section_header(console, "GlobalProtect Gateways"),
+                                   render_gp_gateways(vsys_root, console, grep)),
+        "gp-portals":     lambda: (section_header(console, "GlobalProtect Portals"),
+                                   render_gp_portals(vsys_root, console, grep)),
+        "decryption":     lambda: (section_header(console, "Decryption Rules"),
+                                   render_decryption_rules(vsys_root, console, grep)),
+        "pbf":            lambda: (section_header(console, "Policy Based Forwarding Rules"),
+                                   render_pbf_rules(vsys_root, console, grep)),
+        "app-override":   lambda: (section_header(console, "Application Override Rules"),
+                                   render_app_override_rules(vsys_root, console, grep)),
+        "auth-rules":     lambda: (section_header(console, "Authentication Rules"),
+                                   render_auth_rules(vsys_root, console, grep)),
+        "qos-rules":      lambda: (section_header(console, "QoS Rules"),
+                                   render_qos_rules(vsys_root, console, grep)),
+        "url-categories": lambda: (section_header(console, "Custom URL Categories"),
+                                   render_url_categories(vsys_root, console, grep)),
+        "server-profiles": lambda: (section_header(console, "Server Profiles"),
+                                    render_server_profiles(shared_root, console, grep)),
+        "ike-gateways":   lambda: (section_header(console, "IKE Gateways"),
+                                   render_ike_gateways(network_root, console, grep)),
+        "ike-crypto":     lambda: (section_header(console, "IKE Crypto Profiles"),
+                                   render_ike_crypto(network_root, console, grep)),
+        "ipsec-crypto":   lambda: (section_header(console, "IPSec Crypto Profiles"),
+                                   render_ipsec_crypto(network_root, console, grep)),
+        "ipsec-tunnels":  lambda: (section_header(console, "IPSec Tunnels"),
+                                   render_ipsec_tunnels(network_root, console, grep)),
+        "bgp-peers":      lambda: (section_header(console, "BGP Peers"),
+                                   render_bgp_peers(network_root, console, grep)),
+        "ospf-areas":     lambda: (section_header(console, "OSPF Areas"),
+                                   render_ospf_areas(network_root, console, grep)),
+        "redist-profiles": lambda: (section_header(console, "Redistribution Profiles"),
+                                    render_redist_profiles(network_root, console, grep)),
     }
 
     for section in sections:

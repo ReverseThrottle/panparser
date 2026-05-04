@@ -28,7 +28,7 @@ def render_security_rules(vsys_root: Element | None, console, grep: str | None =
         console.print("[dim]No vsys configuration found.[/dim]")
         return
 
-    rules_container = vsys_root.find("security/rules")
+    rules_container = vsys_root.find("rulebase/security/rules") or vsys_root.find("security/rules")
     if rules_container is None:
         console.print("[dim]No security rules found.[/dim]")
         return
