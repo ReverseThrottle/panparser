@@ -642,6 +642,216 @@ def export_ethernet_interfaces(
     return parents, subinterfaces
 
 
+def export_decryption_rules(vsys_root) -> list[dict]:
+    """Export SSL/TLS decryption policy rules."""
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("rulebase/decryption/rules")
+    if container is None:
+        return out
+    for rule in container.findall("entry"):
+        name = rule.get("name", "")
+        action = rule.findtext("action") or "no-decrypt"
+        src_zones = get_members(rule, "from/member")
+        dst_zones = get_members(rule, "to/member")
+        src_addrs = get_members(rule, "source/member")
+        dst_addrs = get_members(rule, "destination/member")
+        src_users = get_members(rule, "source-user/member")
+        categories = get_members(rule, "category/member")
+        services = get_members(rule, "service/member")
+        profile = rule.findtext("profile") or ""
+        desc = rule.findtext("description") or ""
+        log_setting = rule.findtext("log-setting") or ""
+        disabled = rule.findtext("disabled") == "yes"
+        tags = get_members(rule, "tag/member")
+
+        # PAN-OS <type> element maps to SCM type dict
+        # e.g. ssl-forward-proxy → {"ssl_forward_proxy": {}}
+        _type_map = {
+            "ssl-forward-proxy":      "ssl_forward_proxy",
+            "ssl-inbound-inspection": "ssl_inbound_inspection",
+            "ssl-no-proxy":           "ssl_no_proxy",
+            "ssh-proxy":              "ssh_proxy",
+        }
+        rule_type_el = rule.find("type")
+        rule_type: dict | None = None
+        if rule_type_el is not None:
+            # The type element may be a text value or a child element tag
+            type_text = rule_type_el.text or ""
+            type_child = next(iter(rule_type_el), None)
+            raw_type = type_child.tag if type_child is not None else type_text.strip()
+            scm_type_key = _type_map.get(raw_type, raw_type.replace("-", "_"))
+            rule_type = {scm_type_key: {}}
+
+        d: dict = {
+            "name": name,
+            "action": action,
+            "from": src_zones or ["any"],
+            "to": dst_zones or ["any"],
+            "source": src_addrs or ["any"],
+            "destination": dst_addrs or ["any"],
+            "source_user": src_users or ["any"],
+            "category": categories or ["any"],
+            "service": services or ["any"],
+        }
+        if rule_type:
+            d["type"] = rule_type
+        if profile:
+            d["profile"] = profile
+        if disabled:
+            d["disabled"] = True
+        if tags:
+            d["tag"] = tags
+        if desc:
+            d["description"] = desc
+        if log_setting and log_setting != "Panorama":
+            d["log_setting"] = log_setting
+        out.append(d)
+    return out
+
+
+def export_authentication_rules(vsys_root) -> list[dict]:
+    """Export authentication policy rules."""
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("rulebase/authentication/rules")
+    if container is None:
+        return out
+    for rule in container.findall("entry"):
+        name = rule.get("name", "")
+        src_zones = get_members(rule, "from/member")
+        dst_zones = get_members(rule, "to/member")
+        src_addrs = get_members(rule, "source/member")
+        dst_addrs = get_members(rule, "destination/member")
+        src_users = get_members(rule, "source-user/member")
+        categories = get_members(rule, "category/member")
+        services = get_members(rule, "service/member")
+        auth_profile = rule.findtext("authentication-enforcement") or ""
+        desc = rule.findtext("description") or ""
+        log_setting = rule.findtext("log-setting") or ""
+        disabled = rule.findtext("disabled") == "yes"
+        tags = get_members(rule, "tag/member")
+        timeout = rule.findtext("timeout")
+
+        d: dict = {
+            "name": name,
+            "from": src_zones or ["any"],
+            "to": dst_zones or ["any"],
+            "source": src_addrs or ["any"],
+            "destination": dst_addrs or ["any"],
+            "source_user": src_users or ["any"],
+            "category": categories or ["any"],
+            "service": services or ["any"],
+        }
+        if auth_profile:
+            d["authentication_enforcement"] = auth_profile
+        if disabled:
+            d["disabled"] = True
+        if tags:
+            d["tag"] = tags
+        if desc:
+            d["description"] = desc
+        if log_setting and log_setting != "Panorama":
+            d["log_setting"] = log_setting
+        if timeout:
+            try:
+                d["timeout"] = int(timeout)
+            except ValueError:
+                pass
+        out.append(d)
+    return out
+
+
+def export_pbf_rules(vsys_root) -> list[dict]:
+    """Export policy-based forwarding rules."""
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("rulebase/pbf/rules")
+    if container is None:
+        return out
+    for rule in container.findall("entry"):
+        name = rule.get("name", "")
+        src_zones = get_members(rule, "from/member")
+        src_addrs = get_members(rule, "source/member")
+        dst_addrs = get_members(rule, "destination/member")
+        apps = get_members(rule, "application/member")
+        services = get_members(rule, "service/member")
+        desc = rule.findtext("description") or ""
+        disabled = rule.findtext("disabled") == "yes"
+        tags = get_members(rule, "tag/member")
+
+        # Determine action: forward, discard, or no-pbf
+        action: dict = {}
+        fwd = rule.find("action/forward")
+        if fwd is not None:
+            nexthop_ip = fwd.findtext("nexthop/ip-address")
+            egress_iface = fwd.findtext("egress-interface")
+            fwd_d: dict = {}
+            if egress_iface:
+                fwd_d["egress_interface"] = egress_iface
+            if nexthop_ip:
+                fwd_d["nexthop"] = {"ip_address": nexthop_ip}
+            action = {"forward": fwd_d}
+        elif rule.find("action/discard") is not None:
+            action = {"discard": {}}
+        elif rule.find("action/no-pbf") is not None:
+            action = {"no_pbf": {}}
+
+        d: dict = {
+            "name": name,
+            "from_": {"zone": src_zones} if src_zones else {"zone": ["any"]},
+            "source": src_addrs or ["any"],
+            "destination": dst_addrs or ["any"],
+            "application": apps or ["any"],
+            "service": services or ["any"],
+        }
+        if action:
+            d["action"] = action
+        if disabled:
+            d["disabled"] = True
+        if tags:
+            d["tag"] = tags
+        if desc:
+            d["description"] = desc
+        out.append(d)
+    return out
+
+
+def export_qos_rules(vsys_root) -> list[dict]:
+    """Export QoS policy rules.
+
+    SCM QoS rule model only supports name, description, action, schedule,
+    and dscp_tos. Match criteria (from/to/source/destination/app/service)
+    are not supported in SCM and are silently dropped.
+    """
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("rulebase/qos/rules")
+    if container is None:
+        return out
+    for rule in container.findall("entry"):
+        name = rule.get("name", "")
+        desc = rule.findtext("description") or ""
+
+        # SCM action: {"class": "1"} through {"class": "8"}
+        qos_class = rule.findtext("action/class") or ""
+        action: dict = {}
+        if qos_class:
+            action = {"class": qos_class}
+
+        d: dict = {"name": name}
+        if action:
+            d["action"] = action
+        if desc:
+            d["description"] = desc
+        out.append(d)
+    return out
+
+
 def export_nat_rules(vsys_root) -> list[dict]:
     out = []
     if vsys_root is None:

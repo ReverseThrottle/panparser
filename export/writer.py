@@ -19,6 +19,10 @@ from export.objects import (
     export_zones,
     export_security_rules,
     export_nat_rules,
+    export_decryption_rules,
+    export_authentication_rules,
+    export_pbf_rules,
+    export_qos_rules,
     export_ike_crypto_profiles,
     export_ipsec_crypto_profiles,
     export_ike_gateways,
@@ -100,6 +104,10 @@ def build_export(
     zones              = export_zones(vsys_root)
     security_rules     = export_security_rules(vsys_root)
     nat_rules          = export_nat_rules(vsys_root)
+    decryption_rules   = export_decryption_rules(vsys_root)
+    authentication_rules = export_authentication_rules(vsys_root)
+    pbf_rules          = export_pbf_rules(vsys_root)
+    qos_rules          = export_qos_rules(vsys_root)
 
     ike_crypto_profiles   = export_ike_crypto_profiles(network_root)
     ipsec_crypto_profiles = export_ipsec_crypto_profiles(network_root)
@@ -189,6 +197,10 @@ def build_export(
         "policy": {
             "security_rules": security_rules,
             "nat_rules": nat_rules,
+            "decryption_rules": decryption_rules,
+            "authentication_rules": authentication_rules,
+            "pbf_rules": pbf_rules,
+            "qos_rules": qos_rules,
         },
         "zones": zones,
     }
@@ -256,7 +268,11 @@ def write_export(data: dict, output_path: str) -> None:
     )
     print(
         f"  policy  : {len(pol.get('security_rules',[]))} security_rules  "
-        f"{len(pol.get('nat_rules',[]))} nat_rules",
+        f"{len(pol.get('nat_rules',[]))} nat_rules  "
+        f"{len(pol.get('decryption_rules',[]))} decryption_rules  "
+        f"{len(pol.get('authentication_rules',[]))} auth_rules  "
+        f"{len(pol.get('pbf_rules',[]))} pbf_rules  "
+        f"{len(pol.get('qos_rules',[]))} qos_rules",
         file=sys.stderr,
     )
     if warns:
