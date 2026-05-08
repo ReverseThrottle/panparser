@@ -894,3 +894,190 @@ def export_nat_rules(vsys_root) -> list[dict]:
             d["tag"] = tags
         out.append(d)
     return out
+
+
+# ── Security Profiles (Chunk 2) ───────────────────────────────────────────────
+
+def _export_named_profiles(vsys_root, path: str) -> list[dict]:
+    """Export profiles that only need name + description (complex rule bodies are skipped)."""
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find(f"profiles/{path}")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        desc = entry.findtext("description") or ""
+        d: dict = {"name": name}
+        if desc:
+            d["description"] = desc
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
+def export_anti_spyware_profiles(vsys_root) -> list[dict]:
+    return _export_named_profiles(vsys_root, "spyware")
+
+
+def export_wildfire_antivirus_profiles(vsys_root) -> list[dict]:
+    """Export WildFire antivirus profiles including rules (name, direction, analysis, app, file_type).
+
+    SCM WildfireAvProfileCreateModel requires at least one rule; a default is added if none found.
+    """
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("profiles/wildfire-analysis")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        desc = entry.findtext("description") or ""
+        rules = []
+        for rule_el in entry.findall("rules/entry"):
+            rule: dict = {
+                "name": rule_el.get("name", "default"),
+                "direction": rule_el.findtext("direction") or "both",
+            }
+            apps = get_members(rule_el, "application/member")
+            ftypes = get_members(rule_el, "file-type/member")
+            analysis = rule_el.findtext("analysis") or ""
+            if apps:
+                rule["application"] = apps
+            if ftypes:
+                rule["file_type"] = ftypes
+            if analysis:
+                rule["analysis"] = analysis
+            rules.append(rule)
+        if not rules:
+            rules = [{"name": "default", "direction": "both",
+                      "application": ["any"], "file_type": ["any"],
+                      "analysis": "public-cloud"}]
+        d: dict = {"name": name, "rules": rules}
+        if desc:
+            d["description"] = desc
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
+def export_vulnerability_protection_profiles(vsys_root) -> list[dict]:
+    """Export vulnerability protection profiles including rules.
+
+    SCM requires: name, severity, host, cve, vendor_id, category, threat_name per rule.
+    A default rule is added if none found. Complex action fields are skipped — review in SCM.
+    """
+    _DEFAULT_VULN_RULE = {
+        "name": "default", "severity": ["any"], "host": "any",
+        "cve": ["any"], "vendor_id": ["any"], "category": "any", "threat_name": "any",
+    }
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("profiles/vulnerability")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        desc = entry.findtext("description") or ""
+        rules = []
+        for rule_el in entry.findall("rules/entry"):
+            rule_name = rule_el.get("name", "default")
+            severities = get_members(rule_el, "severity/member")
+            host = rule_el.findtext("host") or "any"
+            cves = get_members(rule_el, "cve/member")
+            vendor_ids = get_members(rule_el, "vendor-id/member")
+            category = rule_el.findtext("category") or "any"
+            threat_name = rule_el.findtext("threat-name") or "any"
+            rule: dict = {
+                "name": rule_name,
+                "severity": severities if severities else ["any"],
+                "host": host if host in ("any", "client", "server") else "any",
+                "cve": cves if cves else ["any"],
+                "vendor_id": vendor_ids if vendor_ids else ["any"],
+                "category": category,
+                "threat_name": threat_name,
+            }
+            rules.append(rule)
+        if not rules:
+            rules = [dict(_DEFAULT_VULN_RULE)]
+        d: dict = {"name": name, "rules": rules}
+        if desc:
+            d["description"] = desc
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
+def export_url_access_profiles(vsys_root) -> list[dict]:
+    """Export URL filtering profiles (mapped to URL Access profiles in SCM)."""
+    return _export_named_profiles(vsys_root, "url-filtering")
+
+
+def export_decryption_profiles(vsys_root) -> list[dict]:
+    return _export_named_profiles(vsys_root, "decryption")
+
+
+def export_dns_security_profiles(vsys_root) -> list[dict]:
+    return _export_named_profiles(vsys_root, "dns-security")
+
+
+def export_file_blocking_profiles(vsys_root) -> list[dict]:
+    """Export file blocking profiles including rules (rules are simple enough to extract)."""
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("profiles/file-blocking")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        desc = entry.findtext("description") or ""
+        rules = []
+        for rule_el in entry.findall("rules/entry"):
+            rule: dict = {"name": rule_el.get("name", "")}
+            apps = get_members(rule_el, "application/member")
+            ftypes = get_members(rule_el, "file-type/member")
+            direction = rule_el.findtext("direction") or "both"
+            action = rule_el.findtext("action") or "alert"
+            if apps:
+                rule["application"] = apps
+            if ftypes:
+                rule["file_type"] = ftypes
+            rule["direction"] = direction
+            rule["action"] = action
+            rules.append(rule)
+        d: dict = {"name": name}
+        if desc:
+            d["description"] = desc
+        if rules:
+            d["rules"] = rules
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
+def export_zone_protection_profiles(network_root) -> list[dict]:
+    """Export zone protection profiles from network/profiles/zone-protection."""
+    out = []
+    if network_root is None:
+        return out
+    container = network_root.find("profiles/zone-protection")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        desc = entry.findtext("description") or ""
+        d: dict = {"name": name}
+        if desc:
+            d["description"] = desc
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
+def export_dos_protection_profiles(vsys_root) -> list[dict]:
+    """Export DoS protection profiles — exported for reference only, no SDK push."""
+    return _export_named_profiles(vsys_root, "dos-protection")

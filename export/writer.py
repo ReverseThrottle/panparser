@@ -30,6 +30,15 @@ from export.objects import (
     export_loopback_interfaces,
     export_tunnel_interfaces,
     export_ethernet_interfaces,
+    export_anti_spyware_profiles,
+    export_wildfire_antivirus_profiles,
+    export_vulnerability_protection_profiles,
+    export_url_access_profiles,
+    export_decryption_profiles,
+    export_dns_security_profiles,
+    export_file_blocking_profiles,
+    export_zone_protection_profiles,
+    export_dos_protection_profiles,
 )
 
 
@@ -117,6 +126,28 @@ def build_export(
     tunnel_interfaces     = export_tunnel_interfaces(network_root)
     ethernet_parents, ethernet_subinterfaces = export_ethernet_interfaces(network_root)
 
+    anti_spyware_profiles           = export_anti_spyware_profiles(vsys_root)
+    wildfire_antivirus_profiles     = export_wildfire_antivirus_profiles(vsys_root)
+    vulnerability_protection_profiles = export_vulnerability_protection_profiles(vsys_root)
+    url_access_profiles             = export_url_access_profiles(vsys_root)
+    decryption_profiles             = export_decryption_profiles(vsys_root)
+    dns_security_profiles           = export_dns_security_profiles(vsys_root)
+    file_blocking_profiles          = export_file_blocking_profiles(vsys_root)
+    zone_protection_profiles        = export_zone_protection_profiles(network_root)
+    dos_protection_profiles         = export_dos_protection_profiles(vsys_root)
+
+    # DoS protection profiles have no SDK support — flag as manual step
+    if dos_protection_profiles:
+        warnings.append({
+            "severity": "warn",
+            "object_path": "security_profiles/dos_protection",
+            "message": (
+                f"{len(dos_protection_profiles)} DoS protection profile(s) exported for reference "
+                "but cannot be pushed — no SCM SDK module exists for this object type. "
+                "Recreate these profiles manually in SCM after migration."
+            ),
+        })
+
     # Migration warnings for VPN/interface known limitations
     if ike_gateways:
         warnings.append({
@@ -203,6 +234,17 @@ def build_export(
             "qos_rules": qos_rules,
         },
         "zones": zones,
+        "security_profiles": {
+            "anti_spyware": anti_spyware_profiles,
+            "wildfire_antivirus": wildfire_antivirus_profiles,
+            "vulnerability_protection": vulnerability_protection_profiles,
+            "url_access": url_access_profiles,
+            "decryption": decryption_profiles,
+            "dns_security": dns_security_profiles,
+            "file_blocking": file_blocking_profiles,
+            "zone_protection": zone_protection_profiles,
+            "dos_protection": dos_protection_profiles,
+        },
     }
 
     # Apply trailing-underscore normalization across all names and references
@@ -230,6 +272,7 @@ def write_export(data: dict, output_path: str) -> None:
     meta = data.get("meta", {})
     objs = data.get("objects", {})
     pol  = data.get("policy", {})
+    sec_profiles = data.get("security_profiles", {})
     vrs  = data.get("network", {}).get("virtual_routers", [])
     warns = data.get("migration_warnings", [])
 
@@ -273,6 +316,18 @@ def write_export(data: dict, output_path: str) -> None:
         f"{len(pol.get('authentication_rules',[]))} auth_rules  "
         f"{len(pol.get('pbf_rules',[]))} pbf_rules  "
         f"{len(pol.get('qos_rules',[]))} qos_rules",
+        file=sys.stderr,
+    )
+    print(
+        f"  profiles: {len(sec_profiles.get('anti_spyware',[]))} anti_spyware  "
+        f"{len(sec_profiles.get('wildfire_antivirus',[]))} wildfire  "
+        f"{len(sec_profiles.get('vulnerability_protection',[]))} vuln  "
+        f"{len(sec_profiles.get('url_access',[]))} url_access  "
+        f"{len(sec_profiles.get('decryption',[]))} decryption  "
+        f"{len(sec_profiles.get('dns_security',[]))} dns_sec  "
+        f"{len(sec_profiles.get('file_blocking',[]))} file_block  "
+        f"{len(sec_profiles.get('zone_protection',[]))} zone_prot  "
+        f"{len(sec_profiles.get('dos_protection',[]))} dos_prot(ref-only)",
         file=sys.stderr,
     )
     if warns:
