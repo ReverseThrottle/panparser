@@ -39,6 +39,14 @@ from export.objects import (
     export_file_blocking_profiles,
     export_zone_protection_profiles,
     export_dos_protection_profiles,
+    export_custom_applications,
+    export_application_filters,
+    export_schedules,
+    export_edls,
+    export_log_forwarding_profiles,
+    export_syslog_server_profiles,
+    export_http_server_profiles,
+    export_authentication_profiles,
 )
 
 
@@ -136,6 +144,15 @@ def build_export(
     zone_protection_profiles        = export_zone_protection_profiles(network_root)
     dos_protection_profiles         = export_dos_protection_profiles(vsys_root)
 
+    custom_applications     = export_custom_applications(vsys_root)
+    application_filters     = export_application_filters(vsys_root)
+    schedules               = export_schedules(vsys_root)
+    edls                    = export_edls(vsys_root)
+    log_forwarding_profiles = export_log_forwarding_profiles(vsys_root)
+    syslog_server_profiles  = export_syslog_server_profiles(vsys_root)
+    http_server_profiles    = export_http_server_profiles(vsys_root)
+    authentication_profiles = export_authentication_profiles(vsys_root)
+
     # DoS protection profiles have no SDK support — flag as manual step
     if dos_protection_profiles:
         warnings.append({
@@ -224,6 +241,14 @@ def build_export(
             "service_groups": service_groups,
             "application_groups": application_groups,
             "url_categories": url_categories,
+            "custom_applications": custom_applications,
+            "application_filters": application_filters,
+            "schedules": schedules,
+            "edls": edls,
+            "log_forwarding_profiles": log_forwarding_profiles,
+            "syslog_server_profiles": syslog_server_profiles,
+            "http_server_profiles": http_server_profiles,
+            "authentication_profiles": authentication_profiles,
         },
         "policy": {
             "security_rules": security_rules,
@@ -303,6 +328,17 @@ def write_export(data: dict, output_path: str) -> None:
         f"{len(objs.get('application_groups',[]))} app_groups  "
         f"{len(objs.get('url_categories',[]))} url_cats  "
         f"{len(objs.get('profile_groups',[]))} profile_groups",
+        file=sys.stderr,
+    )
+    print(
+        f"  extras  : {len(objs.get('custom_applications',[]))} custom_apps  "
+        f"{len(objs.get('application_filters',[]))} app_filters  "
+        f"{len(objs.get('schedules',[]))} schedules  "
+        f"{len(objs.get('edls',[]))} edls  "
+        f"{len(objs.get('log_forwarding_profiles',[]))} lfps  "
+        f"{len(objs.get('syslog_server_profiles',[]))} syslog_profiles  "
+        f"{len(objs.get('http_server_profiles',[]))} http_profiles  "
+        f"{len(objs.get('authentication_profiles',[]))} auth_profiles",
         file=sys.stderr,
     )
     print(

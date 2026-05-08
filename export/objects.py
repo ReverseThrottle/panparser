@@ -1081,3 +1081,362 @@ def export_zone_protection_profiles(network_root) -> list[dict]:
 def export_dos_protection_profiles(vsys_root) -> list[dict]:
     """Export DoS protection profiles — exported for reference only, no SDK push."""
     return _export_named_profiles(vsys_root, "dos-protection")
+
+
+# ── Chunk 3: Applications, Schedules, EDLs, Server Profiles, Auth Profiles ───
+
+def export_custom_applications(vsys_root) -> list[dict]:
+    """Export custom application definitions from vsys/application."""
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("application")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        risk_raw = entry.findtext("risk")
+        try:
+            risk = int(risk_raw) if risk_raw else 1
+        except ValueError:
+            risk = 1
+        d: dict = {
+            "name": name,
+            "category": entry.findtext("category") or "business-systems",
+            "subcategory": entry.findtext("subcategory") or "other",
+            "technology": entry.findtext("technology") or "client-server",
+            "risk": risk,
+        }
+        desc = entry.findtext("description") or ""
+        if desc:
+            d["description"] = desc
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
+def export_application_filters(vsys_root) -> list[dict]:
+    """Export application filter definitions from vsys/application-filter."""
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("application-filter")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        d: dict = {"name": name}
+        categories = get_members(entry, "category/member")
+        subcategories = get_members(entry, "subcategory/member")
+        technologies = get_members(entry, "technology/member")
+        risk_strs = get_members(entry, "risk/member")
+        risks = []
+        for r in risk_strs:
+            try:
+                risks.append(int(r))
+            except ValueError:
+                pass
+        if categories:
+            d["category"] = categories
+        if subcategories:
+            d["subcategory"] = subcategories
+        if technologies:
+            d["technology"] = technologies
+        if risks:
+            d["risk"] = risks
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
+def export_schedules(vsys_root) -> list[dict]:
+    """Export schedule objects from vsys/schedule.
+
+    PAN-OS weekly days use text content (e.g. <monday>09:00-17:00</monday>),
+    not member elements. Multiple ranges within a day are comma-separated.
+    """
+    _DAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("schedule")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        sched_type: dict = {}
+
+        recurring_el = entry.find("schedule-type/recurring")
+        non_rec_el = entry.find("schedule-type/non-recurring")
+
+        if recurring_el is not None:
+            weekly_el = recurring_el.find("weekly")
+            daily_el = recurring_el.find("daily")
+            if weekly_el is not None:
+                weekly: dict = {}
+                for day in _DAYS:
+                    day_text = (weekly_el.findtext(day) or "").strip()
+                    if day_text:
+                        weekly[day] = [t.strip() for t in day_text.split(",") if t.strip()]
+                if weekly:
+                    sched_type = {"recurring": {"weekly": weekly}}
+            elif daily_el is not None:
+                times = get_members(daily_el, "member")
+                if times:
+                    sched_type = {"recurring": {"daily": times}}
+        elif non_rec_el is not None:
+            times = get_members(non_rec_el, "member")
+            if times:
+                sched_type = {"non_recurring": times}
+
+        d: dict = {"name": name}
+        if sched_type:
+            d["schedule_type"] = sched_type
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
+def export_edls(vsys_root) -> list[dict]:
+    """Export External Dynamic List (EDL) objects from vsys/external-list.
+
+    Supports ip, domain, and url EDL types with recurring schedules.
+    Exception lists are preserved. Predefined EDLs are skipped (read-only in SCM).
+    """
+    _EDL_TYPES = ("ip", "domain", "url")
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("external-list")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        type_el = entry.find("type")
+        if type_el is None:
+            continue
+        edl_type: dict = {}
+        for type_name in _EDL_TYPES:
+            child = type_el.find(type_name)
+            if child is None:
+                continue
+            type_dict: dict = {}
+            url_text = child.findtext("url") or ""
+            if url_text:
+                type_dict["url"] = url_text
+            recurring_el = child.find("recurring")
+            if recurring_el is not None:
+                rec: dict = {}
+                if recurring_el.find("five-minute") is not None:
+                    rec["five_minute"] = {}
+                if recurring_el.find("hourly") is not None:
+                    rec["hourly"] = {}
+                daily_el = recurring_el.find("daily")
+                if daily_el is not None:
+                    at = daily_el.findtext("at") or ""
+                    rec["daily"] = {"at": at} if at else {}
+                weekly_el = recurring_el.find("weekly")
+                if weekly_el is not None:
+                    w: dict = {}
+                    dow = weekly_el.findtext("day-of-week")
+                    if dow:
+                        w["day_of_week"] = dow
+                    at = weekly_el.findtext("at")
+                    if at:
+                        w["at"] = at
+                    rec["weekly"] = w
+                monthly_el = recurring_el.find("monthly")
+                if monthly_el is not None:
+                    m: dict = {}
+                    dom = monthly_el.findtext("day-of-month")
+                    if dom:
+                        m["day_of_month"] = dom
+                    at = monthly_el.findtext("at")
+                    if at:
+                        m["at"] = at
+                    rec["monthly"] = m
+                if rec:
+                    type_dict["recurring"] = rec
+            exceptions = get_members(child, "exception-list/member")
+            if exceptions:
+                type_dict["exception_list"] = exceptions
+            edl_type[type_name] = type_dict
+            break
+        if not edl_type:
+            continue
+        out.append({"name": name, "type": edl_type})
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
+def export_log_forwarding_profiles(vsys_root) -> list[dict]:
+    """Export log forwarding profiles from vsys/log-settings/profiles.
+
+    The send_syslog / send_http forwarding destinations are exported by name
+    for reference but not included in the push payload — those server profile
+    references must be wired up manually in SCM after migration.
+    """
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("log-settings/profiles")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        desc = entry.findtext("description") or ""
+        d: dict = {"name": name}
+        if desc:
+            d["description"] = desc
+        match_list = []
+        for ml_entry in entry.findall("match-list/entry"):
+            ml: dict = {"name": ml_entry.get("name", "")}
+            log_type = ml_entry.findtext("log-type")
+            if log_type:
+                ml["log_type"] = log_type
+            ml["filter"] = ml_entry.findtext("filter") or "All Logs"
+            # Store forwarding targets as reference — not pushed (server profiles
+            # may not exist yet in SCM)
+            syslog_refs = get_members(ml_entry, "send-syslog/using-syslog-setting/member")
+            if syslog_refs:
+                ml["_syslog_refs"] = syslog_refs
+            http_refs = get_members(ml_entry, "send-http/using-http-setting/member")
+            if http_refs:
+                ml["_http_refs"] = http_refs
+            match_list.append(ml)
+        if match_list:
+            d["match_list"] = match_list
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
+def export_syslog_server_profiles(vsys_root) -> list[dict]:
+    """Export syslog server profiles from vsys/log-settings/syslog."""
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("log-settings/syslog")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        servers = []
+        for srv in entry.findall("server/entry"):
+            srv_name = srv.get("name", "")
+            port_raw = srv.findtext("port") or "514"
+            try:
+                port = int(port_raw)
+            except ValueError:
+                port = 514
+            servers.append({
+                "name": srv_name,
+                "server": srv.findtext("server") or "",
+                "transport": srv.findtext("transport") or "UDP",
+                "port": port,
+                "format": srv.findtext("format") or "BSD",
+                "facility": srv.findtext("facility") or "LOG_USER",
+            })
+        d: dict = {"name": name}
+        if servers:
+            d["server"] = servers
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
+def export_http_server_profiles(vsys_root) -> list[dict]:
+    """Export HTTP server profiles from vsys/log-settings/http."""
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("log-settings/http")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        servers = []
+        for srv in entry.findall("server/entry"):
+            srv_name = srv.get("name", "")
+            port_raw = srv.findtext("port") or "443"
+            try:
+                port = int(port_raw)
+            except ValueError:
+                port = 443
+            servers.append({
+                "name": srv_name,
+                "address": srv.findtext("address") or "",
+                "protocol": srv.findtext("protocol") or "HTTPS",
+                "port": port,
+                "http_method": srv.findtext("http-method") or "POST",
+            })
+        d: dict = {"name": name}
+        if servers:
+            d["server"] = servers
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
+def export_authentication_profiles(vsys_root) -> list[dict]:
+    """Export authentication profiles from vsys/authentication-profile.
+
+    Exports name, allow_list, and method type. LDAP/RADIUS profiles reference
+    server profiles that may not exist in SCM — push will fail gracefully for
+    those and require manual configuration after migration.
+    """
+    _METHOD_MAP = {
+        "local-database": "local_database",
+        "ldap": "ldap",
+        "radius": "radius",
+        "saml-idp": "saml_idp",
+        "tacplus": "tacplus",
+        "kerberos": "kerberos",
+    }
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("authentication-profile")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        desc = entry.findtext("description") or ""
+        allow_list = get_members(entry, "allow-list/member")
+        method: dict | None = None
+        method_el = entry.find("method")
+        if method_el is not None:
+            for panos_method, scm_method in _METHOD_MAP.items():
+                child = method_el.find(panos_method)
+                if child is None:
+                    continue
+                if panos_method == "local-database":
+                    method = {"local_database": {}}
+                elif panos_method == "ldap":
+                    m: dict = {}
+                    sp = child.findtext("server-profile")
+                    if sp:
+                        m["server_profile"] = sp
+                    la = child.findtext("login-attribute")
+                    if la:
+                        m["login_attribute"] = la
+                    method = {"ldap": m}
+                elif panos_method == "radius":
+                    m = {}
+                    sp = child.findtext("server-profile")
+                    if sp:
+                        m["server_profile"] = sp
+                    method = {"radius": m}
+                else:
+                    method = {scm_method: {}}
+                break
+        d: dict = {"name": name}
+        if desc:
+            d["description"] = desc
+        if allow_list:
+            d["allow_list"] = allow_list
+        if method:
+            d["method"] = method
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
