@@ -367,6 +367,281 @@ def _extract_destination_translation(rule: Element) -> dict | None:
     return d if d else None
 
 
+def export_ike_crypto_profiles(network_root: Element | None) -> list[dict]:
+    if network_root is None:
+        return []
+    container = network_root.find("ike/crypto-profiles/ike-crypto-profiles")
+    if container is None:
+        return []
+    out = []
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        d: dict = {
+            "name": name,
+            "hash": get_members(entry, "hash/member"),
+            "encryption": get_members(entry, "encryption/member"),
+            "dh_group": get_members(entry, "dh-group/member"),
+        }
+        lt = entry.find("lifetime")
+        if lt is not None:
+            child = next(iter(lt), None)
+            if child is not None and child.text:
+                d["lifetime"] = {child.tag: int(child.text)}
+        out.append(d)
+    return out
+
+
+def export_ipsec_crypto_profiles(network_root: Element | None) -> list[dict]:
+    if network_root is None:
+        return []
+    container = network_root.find("ike/crypto-profiles/ipsec-crypto-profiles")
+    if container is None:
+        return []
+    out = []
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        d: dict = {"name": name}
+        esp = entry.find("esp")
+        if esp is not None:
+            d["esp"] = {
+                "encryption": get_members(esp, "encryption/member"),
+                "authentication": get_members(esp, "authentication/member"),
+            }
+        dh = entry.findtext("dh-group")
+        if dh:
+            d["dh_group"] = dh
+        lt = entry.find("lifetime")
+        if lt is not None:
+            child = next(iter(lt), None)
+            if child is not None and child.text:
+                d["lifetime"] = {child.tag: int(child.text)}
+        out.append(d)
+    return out
+
+
+def export_ike_gateways(network_root: Element | None) -> list[dict]:
+    """PSK keys are encrypted in PAN-OS XML — replaced with a placeholder.
+
+    Admin must update each IKE gateway's PSK (or certificate) after migration.
+    The local-address field is also skipped — not supported in the SCM SDK.
+    """
+    if network_root is None:
+        return []
+    container = network_root.find("ike/gateway")
+    if container is None:
+        return []
+    out = []
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        d: dict = {
+            "name": name,
+            "authentication": {"pre_shared_key": {"key": "MIGRATION-PLACEHOLDER-PSK"}},
+        }
+
+        # Peer address
+        peer_ip = entry.findtext("peer-address/ip")
+        peer_fqdn = entry.findtext("peer-address/fqdn")
+        if peer_ip:
+            d["peer_address"] = {"ip": peer_ip}
+        elif peer_fqdn:
+            d["peer_address"] = {"fqdn": peer_fqdn}
+        else:
+            d["peer_address"] = {"dynamic": {}}
+
+        # Protocol version + per-version settings
+        proto: dict = {}
+        version = entry.findtext("protocol/version")
+        if version:
+            proto["version"] = version
+        for ver in ("ikev1", "ikev2"):
+            el = entry.find(f"protocol/{ver}")
+            if el is None:
+                continue
+            ver_d: dict = {}
+            cp = el.findtext("ike-crypto-profile")
+            if cp:
+                ver_d["ike_crypto_profile"] = cp
+            dpd = el.find("dpd")
+            if dpd is not None:
+                ver_d["dpd"] = {"enable": dpd.findtext("enable") == "yes"}
+            if ver_d:
+                proto[ver] = ver_d
+        if proto:
+            d["protocol"] = proto
+
+        # protocol-common
+        pc = entry.find("protocol-common")
+        if pc is not None:
+            pc_d: dict = {}
+            nat_trav = pc.find("nat-traversal")
+            if nat_trav is not None:
+                pc_d["nat_traversal"] = {"enable": nat_trav.findtext("enable") == "yes"}
+            frag = pc.find("fragmentation")
+            if frag is not None:
+                pc_d["fragmentation"] = {"enable": frag.findtext("enable") == "yes"}
+            if pc_d:
+                d["protocol_common"] = pc_d
+
+        out.append(d)
+    return out
+
+
+def export_ipsec_tunnels(network_root: Element | None) -> list[dict]:
+    """The tunnel-interface binding is skipped — not supported in the SCM SDK.
+
+    Admin must link the IPSec tunnel to its tunnel interface after migration.
+    """
+    if network_root is None:
+        return []
+    container = network_root.find("tunnel/ipsec")
+    if container is None:
+        return []
+    out = []
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        d: dict = {"name": name}
+
+        ak = entry.find("auto-key")
+        if ak is not None:
+            auto_key: dict = {}
+            gws = [e.get("name", "") for e in ak.findall("ike-gateway/entry") if e.get("name")]
+            if gws:
+                auto_key["ike_gateway"] = [{"name": g} for g in gws]
+            cp = ak.findtext("ipsec-crypto-profile")
+            if cp:
+                auto_key["ipsec_crypto_profile"] = cp
+            proxy_ids = []
+            for px in ak.findall("proxy-id/entry"):
+                px_d: dict = {"name": px.get("name", "")}
+                local = px.findtext("local")
+                remote = px.findtext("remote")
+                if local:
+                    px_d["local"] = local
+                if remote:
+                    px_d["remote"] = remote
+                proto_el = px.find("protocol")
+                if proto_el is not None:
+                    if proto_el.find("tcp") is not None:
+                        px_d["protocol"] = {"tcp": {}}
+                    elif proto_el.find("udp") is not None:
+                        px_d["protocol"] = {"udp": {}}
+                    # <any/> → omit protocol (SCM default = any)
+                proxy_ids.append(px_d)
+            if proxy_ids:
+                auto_key["proxy_id"] = proxy_ids
+            d["auto_key"] = auto_key
+
+        out.append(d)
+    return out
+
+
+def export_loopback_interfaces(network_root: Element | None) -> list[dict]:
+    """Loopback subinterfaces live at interface/loopback/units/entry."""
+    if network_root is None:
+        return []
+    units = network_root.find("interface/loopback/units")
+    if units is None:
+        return []
+    out = []
+    for entry in units.findall("entry"):
+        name = entry.get("name", "")
+        d: dict = {"name": name}
+        comment = entry.findtext("comment")
+        if comment:
+            d["comment"] = comment
+        mtu = entry.findtext("mtu")
+        if mtu:
+            d["mtu"] = int(mtu)
+        mgmt = entry.findtext("interface-management-profile")
+        if mgmt:
+            d["interface_management_profile"] = mgmt
+        ips = [e.get("name", "") for e in entry.findall("ip/entry") if e.get("name")]
+        if ips:
+            d["ip"] = [{"name": ip} for ip in ips]
+        out.append(d)
+    return out
+
+
+def export_tunnel_interfaces(network_root: Element | None) -> list[dict]:
+    """Tunnel subinterfaces live at interface/tunnel/units/entry."""
+    if network_root is None:
+        return []
+    units = network_root.find("interface/tunnel/units")
+    if units is None:
+        return []
+    out = []
+    for entry in units.findall("entry"):
+        name = entry.get("name", "")
+        d: dict = {"name": name}
+        comment = entry.findtext("comment")
+        if comment:
+            d["comment"] = comment
+        ips = [e.get("name", "") for e in entry.findall("ip/entry") if e.get("name")]
+        if ips:
+            d["ip"] = [{"name": ip} for ip in ips]
+        out.append(d)
+    return out
+
+
+def export_ethernet_interfaces(
+    network_root: Element | None,
+) -> tuple[list[dict], list[dict]]:
+    """Return (parent_interfaces, layer3_subinterfaces).
+
+    Parent ethernet interfaces are pushed as layer3 mode with no IP.
+    Subinterfaces (units) carry the IP/VLAN config and are pushed separately.
+    """
+    if network_root is None:
+        return [], []
+    container = network_root.find("interface/ethernet")
+    if container is None:
+        return [], []
+    parents: list[dict] = []
+    subinterfaces: list[dict] = []
+
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        layer3 = entry.find("layer3")
+        layer2 = entry.find("layer2")
+
+        parent: dict = {"name": name}
+        comment = entry.findtext("comment")
+        if comment:
+            parent["comment"] = comment
+
+        if layer3 is not None:
+            layer3_d: dict = {}
+            ips = [e.get("name", "") for e in layer3.findall("ip/entry") if e.get("name")]
+            if ips:
+                layer3_d["ip"] = [{"name": ip} for ip in ips]
+            parent["layer3"] = layer3_d
+
+            for unit in layer3.findall("units/entry"):
+                sub: dict = {"name": unit.get("name", ""), "parent_interface": name}
+                tag = unit.findtext("tag")
+                if tag:
+                    sub["tag"] = int(tag)
+                sub_comment = unit.findtext("comment")
+                if sub_comment:
+                    sub["comment"] = sub_comment
+                mtu = unit.findtext("mtu")
+                if mtu:
+                    sub["mtu"] = int(mtu)
+                mgmt = unit.findtext("interface-management-profile")
+                if mgmt:
+                    sub["interface_management_profile"] = mgmt
+                sub_ips = [e.get("name", "") for e in unit.findall("ip/entry") if e.get("name")]
+                if sub_ips:
+                    sub["ip"] = [{"name": ip} for ip in sub_ips]
+                subinterfaces.append(sub)
+        elif layer2 is not None:
+            parent["layer2"] = {}
+
+        parents.append(parent)
+
+    return parents, subinterfaces
+
+
 def export_nat_rules(vsys_root) -> list[dict]:
     out = []
     if vsys_root is None:

@@ -5,3 +5,5 @@ parsers/__pycache__/
 *.pyo
 sample-config.xml
 *.xml
+export.json
+migration-report-*.txt

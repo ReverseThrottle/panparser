@@ -19,6 +19,13 @@ from export.objects import (
     export_zones,
     export_security_rules,
     export_nat_rules,
+    export_ike_crypto_profiles,
+    export_ipsec_crypto_profiles,
+    export_ike_gateways,
+    export_ipsec_tunnels,
+    export_loopback_interfaces,
+    export_tunnel_interfaces,
+    export_ethernet_interfaces,
 )
 
 
@@ -94,6 +101,54 @@ def build_export(
     security_rules     = export_security_rules(vsys_root)
     nat_rules          = export_nat_rules(vsys_root)
 
+    ike_crypto_profiles   = export_ike_crypto_profiles(network_root)
+    ipsec_crypto_profiles = export_ipsec_crypto_profiles(network_root)
+    ike_gateways          = export_ike_gateways(network_root)
+    ipsec_tunnels         = export_ipsec_tunnels(network_root)
+    loopback_interfaces   = export_loopback_interfaces(network_root)
+    tunnel_interfaces     = export_tunnel_interfaces(network_root)
+    ethernet_parents, ethernet_subinterfaces = export_ethernet_interfaces(network_root)
+
+    # Migration warnings for VPN/interface known limitations
+    if ike_gateways:
+        warnings.append({
+            "severity": "warn",
+            "object_path": "network/ike_gateways",
+            "message": (
+                f"{len(ike_gateways)} IKE gateway(s) exported with placeholder PSK "
+                "('MIGRATION-PLACEHOLDER-PSK'). Update each gateway's pre-shared key "
+                "in SCM after migration. The local-address field is also not supported "
+                "by the SCM SDK and was skipped."
+            ),
+        })
+    if ipsec_tunnels:
+        warnings.append({
+            "severity": "warn",
+            "object_path": "network/ipsec_tunnels",
+            "message": (
+                f"{len(ipsec_tunnels)} IPSec tunnel(s) exported without tunnel-interface "
+                "binding — the SCM SDK does not support this field. Link each tunnel "
+                "to its tunnel interface manually after migration."
+            ),
+        })
+    total_ifaces = (
+        len(loopback_interfaces) + len(tunnel_interfaces)
+        + len(ethernet_parents) + len(ethernet_subinterfaces)
+    )
+    if total_ifaces:
+        warnings.append({
+            "severity": "info",
+            "object_path": "network/interfaces",
+            "message": (
+                f"{total_ifaces} physical interface(s) exported for reference "
+                f"({len(ethernet_parents)} ethernet + {len(ethernet_subinterfaces)} subinterfaces, "
+                f"{len(loopback_interfaces)} loopback, {len(tunnel_interfaces)} tunnel). "
+                "Physical interfaces are device-scoped in SCM and cannot be pushed to a folder — "
+                "they must be configured per-device in SCM device management. "
+                "Interface data is preserved in the export JSON under network.interfaces."
+            ),
+        })
+
     # Build a unified rename map for all objects with trailing underscores
     all_named = addresses + address_groups + service_groups + tags
     rename_map = _build_rename_map(all_named)
@@ -110,6 +165,16 @@ def build_export(
         "migration_warnings": warnings,
         "network": {
             "virtual_routers": virtual_routers,
+            "ike_crypto_profiles": ike_crypto_profiles,
+            "ipsec_crypto_profiles": ipsec_crypto_profiles,
+            "ike_gateways": ike_gateways,
+            "ipsec_tunnels": ipsec_tunnels,
+            "interfaces": {
+                "loopback": loopback_interfaces,
+                "tunnel": tunnel_interfaces,
+                "ethernet": ethernet_parents,
+                "ethernet_subinterfaces": ethernet_subinterfaces,
+            },
         },
         "objects": {
             "tags": tags,
@@ -161,8 +226,17 @@ def write_export(data: dict, output_path: str) -> None:
         f"[{meta.get('hostname', '?')}  PAN-OS {meta.get('sw_version', '?')}]",
         file=sys.stderr,
     )
+    net = data.get("network", {})
+    ifaces = net.get("interfaces", {})
     print(
-        f"  network : {len(vrs)} virtual_router(s)",
+        f"  network : {len(vrs)} virtual_router(s)  "
+        f"{len(net.get('ike_crypto_profiles', []))} ike_crypto  "
+        f"{len(net.get('ipsec_crypto_profiles', []))} ipsec_crypto  "
+        f"{len(net.get('ike_gateways', []))} ike_gw  "
+        f"{len(net.get('ipsec_tunnels', []))} ipsec_tunnel  "
+        f"{len(ifaces.get('loopback', []))} loopback  "
+        f"{len(ifaces.get('tunnel', []))} tunnel  "
+        f"{len(ifaces.get('ethernet', []))} eth({len(ifaces.get('ethernet_subinterfaces', []))} subs)",
         file=sys.stderr,
     )
     print(
