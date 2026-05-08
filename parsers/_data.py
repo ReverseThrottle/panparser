@@ -754,3 +754,331 @@ def get_gp_portals(vsys_root) -> list[tuple]:
         rows.append((name, local_addr, str(client_auth_count), ssl_profile))
     rows.sort(key=lambda r: r[0].lower())
     return rows
+
+
+# ---------------------------------------------------------------------------
+# Export getters — return plain dicts suitable for JSON serialization.
+# These do NOT modify or replace the tuple-returning getters above.
+# ---------------------------------------------------------------------------
+
+def get_virtual_routers_export(network_root: Element | None) -> list[dict]:
+    """Return VR configs as SCM-shaped dicts for JSON export.
+
+    Each dict maps directly to the parameters expected by scm_create_logical_router,
+    with routing config structured to fit inside a single VRF.
+
+    Returns [] when network_root is None or no virtual-routers are found.
+    """
+    if network_root is None:
+        return []
+    vr_container = network_root.find("virtual-router")
+    if vr_container is None:
+        return []
+
+    results = []
+    for vr in vr_container.findall("entry"):
+        vr_name = vr.get("name", "")
+        notes: list[str] = []
+
+        interfaces = get_members(vr, "interface/member")
+        static_routes = _get_static_routes_export(vr, notes)
+        bgp = _get_bgp_export(vr, notes)
+        ospf = _get_ospf_export(vr, notes)
+        ecmp = _get_ecmp_export(vr)
+
+        results.append({
+            "name": vr_name,
+            "interfaces": interfaces,
+            "static_routes": static_routes,
+            "bgp": bgp,
+            "ospf": ospf,
+            "ecmp": ecmp,
+            "_migration_notes": notes,
+        })
+
+    return results
+
+
+def _get_static_routes_export(vr_entry: Element, notes: list[str]) -> list[dict]:
+    """Extract static routes from a VR entry as SCM-shaped dicts."""
+    routes = []
+    sr_container = vr_entry.find("routing-table/ip/static-route")
+    if sr_container is None:
+        return routes
+
+    for route in sr_container.findall("entry"):
+        name = route.get("name", "")
+        destination = route.findtext("destination") or ""
+        interface = route.findtext("interface") or ""
+
+        try:
+            metric = int(route.findtext("metric") or 0) or None
+        except ValueError:
+            metric = None
+        try:
+            admin_dist = int(route.findtext("admin-dist") or 0) or None
+        except ValueError:
+            admin_dist = None
+
+        nexthop_type, nexthop_value = _extract_nexthop_export(route)
+
+        if nexthop_type == "next_vr":
+            notes.append(
+                f"static-route '{name}': next-vr '{nexthop_value}' mapped to "
+                f"next_lr — verify logical router name exists in SCM"
+            )
+
+        entry: dict = {"name": name, "destination": destination}
+        if interface:
+            entry["interface"] = interface
+        if metric is not None:
+            entry["metric"] = metric
+        if admin_dist is not None:
+            entry["admin_dist"] = admin_dist
+        if nexthop_type and nexthop_type != "none":
+            entry["nexthop_type"] = nexthop_type
+            if nexthop_value is not None:
+                entry["nexthop_value"] = nexthop_value
+
+        routes.append(entry)
+
+    return routes
+
+
+def _extract_nexthop_export(route: Element) -> tuple[str, str | None]:
+    """Return (nexthop_type, nexthop_value) for a static route entry."""
+    nh = route.find("nexthop")
+    if nh is None:
+        return "none", None
+    ip = nh.findtext("ip-address")
+    if ip:
+        return "ip_address", ip
+    if nh.find("discard") is not None:
+        return "discard", None
+    next_vr = nh.findtext("next-vr")
+    if next_vr:
+        return "next_vr", next_vr
+    if nh.find("tunnel") is not None:
+        return "tunnel", None
+    return "none", None
+
+
+def _get_bgp_export(vr_entry: Element, notes: list[str]) -> dict:
+    """Extract BGP configuration from a VR entry as an SCM-shaped dict."""
+    bgp_el = vr_entry.find("protocol/bgp")
+    base: dict = {
+        "enable": False,
+        "router_id": "",
+        "local_as": "",
+        "install_route": False,
+        "reject_default_route": False,
+        "allow_redist_default_route": False,
+        "peer_groups": [],
+        "redist_rules": [],
+        "redist_profiles": [],
+    }
+    if bgp_el is None:
+        return base
+
+    base["enable"] = bgp_el.findtext("enable") == "yes"
+    base["router_id"] = bgp_el.findtext("router-id") or ""
+    base["local_as"] = bgp_el.findtext("local-as") or ""
+    base["install_route"] = bgp_el.findtext("install-route") == "yes"
+    base["reject_default_route"] = bgp_el.findtext("reject-default-route") == "yes"
+    base["allow_redist_default_route"] = (
+        bgp_el.findtext("allow-redist-default-route") == "yes"
+    )
+
+    # Peer groups
+    pg_container = bgp_el.find("peer-group")
+    if pg_container is not None:
+        for pg in pg_container.findall("entry"):
+            pg_name = pg.get("name", "")
+            type_el = pg.find("type")
+            pg_type = next((c.tag for c in type_el), "ebgp") if type_el is not None else "ebgp"
+            # Normalize hyphen variant from XML
+            pg_type = pg_type.replace("-", "_")
+
+            peers = []
+            peer_container = pg.find("peer")
+            if peer_container is not None:
+                for peer in peer_container.findall("entry"):
+                    peers.append({
+                        "name": peer.get("name", ""),
+                        "enable": peer.findtext("enable") != "no",
+                        "peer_as": peer.findtext("peer-as") or "",
+                        "peer_ip": peer.findtext("peer-address/ip") or "",
+                        "local_ip": peer.findtext("local-address/ip") or "",
+                        "local_interface": peer.findtext("local-address/interface") or "",
+                        "max_prefixes": peer.findtext("max-prefixes") or "",
+                        "reflector_client": peer.findtext("reflector-client") or "",
+                    })
+
+            base["peer_groups"].append({
+                "name": pg_name,
+                "enable": pg.findtext("enable") != "no",
+                "type": pg_type,
+                "aggregated_confed_as_path": (
+                    pg.findtext("aggregated-confed-as-path") == "yes"
+                ),
+                "soft_reset_with_stored_info": (
+                    pg.findtext("soft-reset-with-stored-info") == "yes"
+                ),
+                "peers": peers,
+            })
+
+    # BGP redistribution rules (redist-rules — maps to BgpRedistRule in SDK)
+    rr_container = bgp_el.find("redist-rules")
+    if rr_container is not None:
+        for rr in rr_container.findall("entry"):
+            base["redist_rules"].append({
+                "name": rr.get("name", ""),
+                "address_family_identifier": (
+                    rr.findtext("address-family-identifier") or "ipv4"
+                ),
+                "route_table": rr.findtext("route-table") or "unicast",
+                "enable": rr.findtext("enable") != "no",
+                "set_origin": rr.findtext("set-origin") or "",
+                "set_med": rr.findtext("set-med") or "",
+                "metric": rr.findtext("metric") or "",
+            })
+
+    # VR-level redistribution profiles — must become separate SCM objects
+    rp_container = vr_entry.find("protocol/redist-profile")
+    if rp_container is not None:
+        for rp in rp_container.findall("entry"):
+            rp_name = rp.get("name", "")
+            action_el = rp.find("action")
+            action = (
+                next((c.tag for c in action_el), "redist")
+                if action_el is not None else "redist"
+            )
+            filter_el = rp.find("filter")
+            filter_types = []
+            filter_destinations = []
+            if filter_el is not None:
+                filter_types = get_members(filter_el, "type/member")
+                filter_destinations = get_members(filter_el, "destination/member")
+
+            base["redist_profiles"].append({
+                "name": rp_name,
+                "priority": int(rp.findtext("priority") or 0),
+                "action": action,
+                "filter_types": filter_types,
+                "filter_destinations": filter_destinations,
+            })
+            notes.append(
+                f"bgp redist-profile '{rp_name}': must be created as a separate "
+                f"bgp_redistribution_profile object in SCM — cannot be migrated inline"
+            )
+
+    return base
+
+
+def _get_ospf_export(vr_entry: Element, notes: list[str]) -> dict:
+    """Extract OSPF configuration from a VR entry as an SCM-shaped dict."""
+    ospf_el = vr_entry.find("protocol/ospf")
+    base: dict = {
+        "enable": False,
+        "router_id": "",
+        "reject_default_route": False,
+        "allow_redist_default_route": False,
+        "areas": [],
+        "export_rules": [],
+    }
+    if ospf_el is None:
+        return base
+
+    base["enable"] = ospf_el.findtext("enable") == "yes"
+    base["router_id"] = ospf_el.findtext("router-id") or ""
+    base["reject_default_route"] = ospf_el.findtext("reject-default-route") == "yes"
+    base["allow_redist_default_route"] = (
+        ospf_el.findtext("allow-redist-default-route") == "yes"
+    )
+
+    # Areas
+    area_container = ospf_el.find("area")
+    if area_container is not None:
+        for area in area_container.findall("entry"):
+            area_id = area.get("name", "")
+            type_el = area.find("type")
+            area_type = (
+                next((c.tag for c in type_el), "normal")
+                if type_el is not None else "normal"
+            )
+
+            interfaces = []
+            iface_container = area.find("interface")
+            if iface_container is not None:
+                for iface in iface_container.findall("entry"):
+                    iface_name = iface.get("name", "")
+                    link_type_el = iface.find("link-type")
+                    link_type = (
+                        next((c.tag for c in link_type_el), "broadcast")
+                        if link_type_el is not None else "broadcast"
+                    )
+                    auth = iface.findtext("authentication") or ""
+                    if auth:
+                        notes.append(
+                            f"ospf area '{area_id}' interface '{iface_name}': "
+                            f"auth profile '{auth}' must be created as a separate "
+                            f"ospf_auth_profile object in SCM"
+                        )
+                    entry: dict = {
+                        "name": iface_name,
+                        "enable": iface.findtext("enable") != "no",
+                        "passive": iface.findtext("passive") == "yes",
+                        "link_type": link_type,
+                    }
+                    metric_str = iface.findtext("metric")
+                    if metric_str:
+                        try:
+                            entry["metric"] = int(metric_str)
+                        except ValueError:
+                            pass
+                    if auth:
+                        entry["authentication"] = auth
+                    interfaces.append(entry)
+
+            base["areas"].append({
+                "id": area_id,
+                "type": area_type,
+                "interfaces": interfaces,
+            })
+
+    # Export rules
+    er_container = ospf_el.find("export-rules")
+    if er_container is not None:
+        for er in er_container.findall("entry"):
+            base["export_rules"].append({
+                "name": er.get("name", ""),
+                "new_path_type": er.findtext("new-path-type") or "",
+                "metric": er.findtext("metric") or "",
+            })
+
+    return base
+
+
+def _get_ecmp_export(vr_entry: Element) -> dict:
+    """Extract ECMP configuration from a VR entry as an SCM-shaped dict."""
+    base: dict = {"enable": False, "max_paths": None, "algorithm": "ip_modulo"}
+    ecmp_el = vr_entry.find("ecmp")
+    if ecmp_el is None:
+        return base
+
+    base["enable"] = ecmp_el.findtext("enable") != "no"
+    max_path = ecmp_el.findtext("max-path")
+    if max_path:
+        try:
+            base["max_paths"] = int(max_path)
+        except ValueError:
+            pass
+
+    algo_el = ecmp_el.find("algorithm")
+    if algo_el is not None:
+        algo_child = next((c.tag for c in algo_el), None)
+        if algo_child:
+            # XML uses hyphens, we normalise to underscores for Python/JSON
+            base["algorithm"] = algo_child.replace("-", "_")
+
+    return base

@@ -112,6 +112,15 @@ def parse_args() -> argparse.Namespace:
         "--no-color", action="store_true",
         help="Disable color output",
     )
+    parser.add_argument(
+        "-o", "--output",
+        metavar="FILE",
+        help="Write structured JSON export to FILE (skips display; use with scm-mcp).",
+    )
+    parser.add_argument(
+        "--force", action="store_true",
+        help="Overwrite output file if it already exists (used with --output).",
+    )
     return parser.parse_args()
 
 
@@ -168,6 +177,29 @@ def section_header(console: Console, title: str) -> None:
 
 def main() -> None:
     args = parse_args()
+
+    root = load_config(args.config)
+    vsys_root, shared_root, network_root = find_roots(
+        root, args.vsys, include_shared=not args.no_shared
+    )
+
+    # --output: write JSON export and exit; do not start the display pipeline
+    if args.output:
+        import os
+        from export.writer import build_export, write_export
+        if os.path.exists(args.output) and not args.force:
+            print(
+                f"Error: '{args.output}' already exists. Use --force to overwrite.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        data = build_export(
+            root, vsys_root, shared_root, network_root,
+            source_file=args.config, vsys=args.vsys,
+        )
+        write_export(data, args.output)
+        sys.exit(0)
+
     sections = args.sections or SECTIONS
     unknown = [s for s in sections if s not in SECTIONS]
     if unknown:
@@ -176,11 +208,6 @@ def main() -> None:
         sys.exit(1)
 
     console = Console(highlight=False, no_color=args.no_color)
-
-    root = load_config(args.config)
-    vsys_root, shared_root, network_root = find_roots(
-        root, args.vsys, include_shared=not args.no_shared
-    )
 
     is_full_config = root.find("defaults") is not None
     grep = args.grep
