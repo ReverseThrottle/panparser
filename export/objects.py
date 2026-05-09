@@ -1440,3 +1440,266 @@ def export_authentication_profiles(vsys_root) -> list[dict]:
         out.append(d)
     out.sort(key=lambda x: x["name"].lower())
     return out
+
+
+def export_radius_server_profiles(vsys_root) -> list[dict]:
+    """Export RADIUS server profiles from vsys/server-profile/radius.
+
+    Secrets are encrypted in PAN-OS XML — replaced with MIGRATION-PLACEHOLDER-SECRET.
+    """
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("server-profile/radius")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        servers = []
+        for srv in entry.findall("server/entry"):
+            srv_name = srv.get("name", "")
+            port_raw = srv.findtext("port") or "1812"
+            try:
+                port = int(port_raw)
+            except ValueError:
+                port = 1812
+            servers.append({
+                "name": srv_name,
+                "ip_address": srv.findtext("server") or "",
+                "port": port,
+                "secret": "MIGRATION-PLACEHOLDER-SECRET",
+            })
+        d: dict = {"name": name}
+        if servers:
+            d["server"] = servers
+        proto_el = entry.find("protocol")
+        if proto_el is not None:
+            for child in proto_el:
+                tag = child.tag
+                if tag == "CHAP":
+                    d["protocol"] = {"CHAP": {}}
+                elif tag == "PAP":
+                    d["protocol"] = {"PAP": {}}
+                elif tag == "PEAP-MSCHAPv2":
+                    d["protocol"] = {"PEAP_MSCHAPv2": {}}
+                elif tag == "PEAP-with-GTC":
+                    d["protocol"] = {"PEAP_with_GTC": {}}
+                elif tag == "EAP-TTLS-with-PAP":
+                    d["protocol"] = {"EAP_TTLS_with_PAP": {}}
+                break
+        retries_raw = entry.findtext("retries")
+        if retries_raw:
+            try:
+                d["retries"] = int(retries_raw)
+            except ValueError:
+                pass
+        timeout_raw = entry.findtext("timeout")
+        if timeout_raw:
+            try:
+                d["timeout"] = int(timeout_raw)
+            except ValueError:
+                pass
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
+def export_ldap_server_profiles(vsys_root) -> list[dict]:
+    """Export LDAP server profiles from vsys/server-profile/ldap.
+
+    bind-password is encrypted in PAN-OS XML — replaced with MIGRATION-PLACEHOLDER-SECRET.
+    """
+    _LDAP_TYPE_MAP = {
+        "active-directory": "active-directory",
+        "e-directory": "e-directory",
+        "sun": "sun",
+        "other": "other",
+    }
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("server-profile/ldap")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        servers = []
+        for srv in entry.findall("server/entry"):
+            srv_name = srv.get("name", "")
+            port_raw = srv.findtext("port") or "389"
+            try:
+                port = int(port_raw)
+            except ValueError:
+                port = 389
+            servers.append({
+                "name": srv_name,
+                "address": srv.findtext("server") or "",
+                "port": port,
+            })
+        d: dict = {"name": name}
+        if servers:
+            d["server"] = servers
+        base = entry.findtext("base")
+        if base:
+            d["base"] = base
+        bind_dn = entry.findtext("bind-dn")
+        if bind_dn:
+            d["bind_dn"] = bind_dn
+        bind_password = entry.findtext("bind-password")
+        if bind_password:
+            d["bind_password"] = "MIGRATION-PLACEHOLDER-SECRET"
+        bind_timelimit = entry.findtext("bind-timelimit")
+        if bind_timelimit:
+            d["bind_timelimit"] = bind_timelimit
+        ldap_type = entry.findtext("ldap-type") or entry.findtext("type")
+        if ldap_type and ldap_type in _LDAP_TYPE_MAP:
+            d["ldap_type"] = _LDAP_TYPE_MAP[ldap_type]
+        timelimit_raw = entry.findtext("timelimit")
+        if timelimit_raw:
+            try:
+                d["timelimit"] = int(timelimit_raw)
+            except ValueError:
+                pass
+        retry_raw = entry.findtext("retry-interval")
+        if retry_raw:
+            try:
+                d["retry_interval"] = int(retry_raw)
+            except ValueError:
+                pass
+        ssl_raw = entry.findtext("ssl")
+        if ssl_raw is not None:
+            d["ssl"] = ssl_raw.lower() == "yes"
+        verify_raw = entry.findtext("verify-server-certificate")
+        if verify_raw is not None:
+            d["verify_server_certificate"] = verify_raw.lower() == "yes"
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
+def export_kerberos_server_profiles(vsys_root) -> list[dict]:
+    """Export Kerberos server profiles from vsys/server-profile/kerberos."""
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("server-profile/kerberos")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        servers = []
+        for srv in entry.findall("server/entry"):
+            srv_name = srv.get("name", "")
+            port_raw = srv.findtext("port") or "88"
+            try:
+                port = int(port_raw)
+            except ValueError:
+                port = 88
+            servers.append({
+                "name": srv_name,
+                "host": srv.findtext("host") or srv.findtext("server") or "",
+                "port": port,
+            })
+        d: dict = {"name": name}
+        if servers:
+            d["server"] = servers
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
+def export_saml_server_profiles(vsys_root) -> list[dict]:
+    """Export SAML IdP server profiles from vsys/server-profile/saml.
+
+    Requires entity_id, certificate, sso_url, and sso_bindings in SCM.
+    Profiles missing required fields are included as-is; push will fail
+    gracefully if the SCM certificate object doesn't exist.
+    """
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("server-profile/saml")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        entity_id = entry.findtext("entity-id") or ""
+        certificate = entry.findtext("certificate") or ""
+        sso_url = entry.findtext("sso-url") or ""
+        sso_bindings_raw = entry.findtext("sso-bindings") or "post"
+        sso_bindings = sso_bindings_raw if sso_bindings_raw in ("post", "redirect") else "post"
+        slo_bindings_raw = entry.findtext("slo-bindings")
+        d: dict = {"name": name}
+        if entity_id:
+            d["entity_id"] = entity_id
+        if certificate:
+            d["certificate"] = certificate
+        if sso_url:
+            d["sso_url"] = sso_url
+        d["sso_bindings"] = sso_bindings
+        if slo_bindings_raw and slo_bindings_raw in ("post", "redirect"):
+            d["slo_bindings"] = slo_bindings_raw
+        max_skew_raw = entry.findtext("max-clock-skew")
+        if max_skew_raw:
+            try:
+                d["max_clock_skew"] = int(max_skew_raw)
+            except ValueError:
+                pass
+        validate_raw = entry.findtext("validate-idp-certificate")
+        if validate_raw is not None:
+            d["validate_idp_certificate"] = validate_raw.lower() == "yes"
+        want_signed_raw = entry.findtext("want-auth-requests-signed")
+        if want_signed_raw is not None:
+            d["want_auth_requests_signed"] = want_signed_raw.lower() == "yes"
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
+def export_tacacs_server_profiles(vsys_root) -> list[dict]:
+    """Export TACACS+ server profiles from vsys/server-profile/tacacs-plus.
+
+    Secrets are encrypted in PAN-OS XML — replaced with MIGRATION-PLACEHOLDER-SECRET.
+    """
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("server-profile/tacacs-plus")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        servers = []
+        for srv in entry.findall("server/entry"):
+            srv_name = srv.get("name", "")
+            port_raw = srv.findtext("port") or "49"
+            try:
+                port = int(port_raw)
+            except ValueError:
+                port = 49
+            servers.append({
+                "name": srv_name,
+                "address": srv.findtext("server") or "",
+                "port": port,
+                "secret": "MIGRATION-PLACEHOLDER-SECRET",
+            })
+        d: dict = {"name": name}
+        if servers:
+            d["server"] = servers
+        proto_raw = entry.findtext("protocol")
+        if proto_raw:
+            proto_upper = proto_raw.upper()
+            if proto_upper in ("CHAP", "PAP"):
+                d["protocol"] = proto_upper
+        timeout_raw = entry.findtext("timeout")
+        if timeout_raw:
+            try:
+                d["timeout"] = int(timeout_raw)
+            except ValueError:
+                pass
+        single_conn_raw = entry.findtext("use-single-connection")
+        if single_conn_raw is not None:
+            d["use_single_connection"] = single_conn_raw.lower() == "yes"
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out

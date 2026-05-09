@@ -47,6 +47,11 @@ from export.objects import (
     export_syslog_server_profiles,
     export_http_server_profiles,
     export_authentication_profiles,
+    export_radius_server_profiles,
+    export_ldap_server_profiles,
+    export_kerberos_server_profiles,
+    export_saml_server_profiles,
+    export_tacacs_server_profiles,
 )
 
 
@@ -148,10 +153,46 @@ def build_export(
     application_filters     = export_application_filters(vsys_root)
     schedules               = export_schedules(vsys_root)
     edls                    = export_edls(vsys_root)
-    log_forwarding_profiles = export_log_forwarding_profiles(vsys_root)
-    syslog_server_profiles  = export_syslog_server_profiles(vsys_root)
-    http_server_profiles    = export_http_server_profiles(vsys_root)
-    authentication_profiles = export_authentication_profiles(vsys_root)
+    log_forwarding_profiles  = export_log_forwarding_profiles(vsys_root)
+    syslog_server_profiles   = export_syslog_server_profiles(vsys_root)
+    http_server_profiles     = export_http_server_profiles(vsys_root)
+    authentication_profiles  = export_authentication_profiles(vsys_root)
+    radius_server_profiles   = export_radius_server_profiles(vsys_root)
+    ldap_server_profiles     = export_ldap_server_profiles(vsys_root)
+    kerberos_server_profiles = export_kerberos_server_profiles(vsys_root)
+    saml_server_profiles     = export_saml_server_profiles(vsys_root)
+    tacacs_server_profiles   = export_tacacs_server_profiles(vsys_root)
+
+    # Identity server profiles with encrypted secrets — flag placeholder values
+    _secret_profiles = (
+        [(radius_server_profiles, "objects/radius_server_profiles", "RADIUS")]
+        + [(ldap_server_profiles,   "objects/ldap_server_profiles",   "LDAP") if ldap_server_profiles else []]
+        + [(tacacs_server_profiles, "objects/tacacs_server_profiles", "TACACS+") if tacacs_server_profiles else []]
+    )
+    for _items, _path, _label in [(r, p, l) for r, p, l in [
+        (radius_server_profiles,   "objects/radius_server_profiles",   "RADIUS"),
+        (ldap_server_profiles,     "objects/ldap_server_profiles",     "LDAP"),
+        (tacacs_server_profiles,   "objects/tacacs_server_profiles",   "TACACS+"),
+    ] if r]:
+        warnings.append({
+            "severity": "warn",
+            "object_path": _path,
+            "message": (
+                f"{len(_items)} {_label} server profile(s) exported with "
+                "'MIGRATION-PLACEHOLDER-SECRET' replacing the encrypted shared secret. "
+                "Update each profile's secret in SCM after migration."
+            ),
+        })
+    if saml_server_profiles:
+        warnings.append({
+            "severity": "warn",
+            "object_path": "objects/saml_server_profiles",
+            "message": (
+                f"{len(saml_server_profiles)} SAML server profile(s) exported. "
+                "The referenced certificate object must exist in SCM before the push will succeed. "
+                "Create or import the certificate in SCM first."
+            ),
+        })
 
     # DoS protection profiles have no SDK support — flag as manual step
     if dos_protection_profiles:
@@ -249,6 +290,11 @@ def build_export(
             "syslog_server_profiles": syslog_server_profiles,
             "http_server_profiles": http_server_profiles,
             "authentication_profiles": authentication_profiles,
+            "radius_server_profiles": radius_server_profiles,
+            "ldap_server_profiles": ldap_server_profiles,
+            "kerberos_server_profiles": kerberos_server_profiles,
+            "saml_server_profiles": saml_server_profiles,
+            "tacacs_server_profiles": tacacs_server_profiles,
         },
         "policy": {
             "security_rules": security_rules,
@@ -339,6 +385,14 @@ def write_export(data: dict, output_path: str) -> None:
         f"{len(objs.get('syslog_server_profiles',[]))} syslog_profiles  "
         f"{len(objs.get('http_server_profiles',[]))} http_profiles  "
         f"{len(objs.get('authentication_profiles',[]))} auth_profiles",
+        file=sys.stderr,
+    )
+    print(
+        f"  id svrs : {len(objs.get('radius_server_profiles',[]))} radius  "
+        f"{len(objs.get('ldap_server_profiles',[]))} ldap  "
+        f"{len(objs.get('kerberos_server_profiles',[]))} kerberos  "
+        f"{len(objs.get('saml_server_profiles',[]))} saml  "
+        f"{len(objs.get('tacacs_server_profiles',[]))} tacacs",
         file=sys.stderr,
     )
     print(
