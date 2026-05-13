@@ -27,6 +27,7 @@ from export.objects import (
     export_ipsec_crypto_profiles,
     export_ike_gateways,
     export_ipsec_tunnels,
+    export_interface_management_profiles,
     export_loopback_interfaces,
     export_tunnel_interfaces,
     export_ethernet_interfaces,
@@ -136,6 +137,7 @@ def build_export(
     ipsec_crypto_profiles = export_ipsec_crypto_profiles(network_root)
     ike_gateways          = export_ike_gateways(network_root)
     ipsec_tunnels         = export_ipsec_tunnels(network_root)
+    interface_mgmt_profiles = export_interface_management_profiles(network_root)
     loopback_interfaces   = export_loopback_interfaces(network_root)
     tunnel_interfaces     = export_tunnel_interfaces(network_root)
     ethernet_parents, ethernet_subinterfaces = export_ethernet_interfaces(network_root)
@@ -268,6 +270,7 @@ def build_export(
             "ipsec_crypto_profiles": ipsec_crypto_profiles,
             "ike_gateways": ike_gateways,
             "ipsec_tunnels": ipsec_tunnels,
+            "interface_management_profiles": interface_mgmt_profiles,
             "interfaces": {
                 "loopback": loopback_interfaces,
                 "tunnel": tunnel_interfaces,

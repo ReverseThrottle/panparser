@@ -535,6 +535,33 @@ def export_ipsec_tunnels(network_root: Element | None) -> list[dict]:
     return out
 
 
+def export_interface_management_profiles(network_root: Element | None) -> list[dict]:
+    """Locally-defined interface management profiles at network/profiles/interface-management-profile."""
+    if network_root is None:
+        return []
+    container = network_root.find("profiles/interface-management-profile")
+    if container is None:
+        return []
+    out = []
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        p: dict = {"name": name}
+        for field in ("http", "https", "telnet", "ssh", "ping", "snmp"):
+            if entry.find(field) is not None:
+                p[field] = True
+        for alias, tag in (("http_ocsp", "http-ocsp"), ("response_pages", "response-pages"),
+                           ("userid_service", "userid-service"),
+                           ("userid_syslog_listener_ssl", "userid-syslog-listener-ssl"),
+                           ("userid_syslog_listener_udp", "userid-syslog-listener-udp")):
+            if entry.find(tag) is not None:
+                p[alias] = True
+        permitted = [e.get("name", "") for e in entry.findall("permitted-ip/entry") if e.get("name")]
+        if permitted:
+            p["permitted_ip"] = permitted
+        out.append(p)
+    return out
+
+
 def export_loopback_interfaces(network_root: Element | None) -> list[dict]:
     """Loopback subinterfaces live at interface/loopback/units/entry."""
     if network_root is None:
