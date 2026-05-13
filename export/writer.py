@@ -30,6 +30,7 @@ from export.objects import (
     export_loopback_interfaces,
     export_tunnel_interfaces,
     export_ethernet_interfaces,
+    export_aggregate_interfaces,
     export_anti_spyware_profiles,
     export_wildfire_antivirus_profiles,
     export_vulnerability_protection_profiles,
@@ -138,6 +139,7 @@ def build_export(
     loopback_interfaces   = export_loopback_interfaces(network_root)
     tunnel_interfaces     = export_tunnel_interfaces(network_root)
     ethernet_parents, ethernet_subinterfaces = export_ethernet_interfaces(network_root)
+    aggregate_parents, aggregate_subinterfaces = export_aggregate_interfaces(network_root)
 
     anti_spyware_profiles           = export_anti_spyware_profiles(vsys_root)
     wildfire_antivirus_profiles     = export_wildfire_antivirus_profiles(vsys_root)
@@ -231,18 +233,18 @@ def build_export(
     total_ifaces = (
         len(loopback_interfaces) + len(tunnel_interfaces)
         + len(ethernet_parents) + len(ethernet_subinterfaces)
+        + len(aggregate_parents) + len(aggregate_subinterfaces)
     )
     if total_ifaces:
         warnings.append({
             "severity": "info",
             "object_path": "network/interfaces",
             "message": (
-                f"{total_ifaces} physical interface(s) exported for reference "
-                f"({len(ethernet_parents)} ethernet + {len(ethernet_subinterfaces)} subinterfaces, "
+                f"{total_ifaces} interface(s) exported as SCM $variable templates "
+                f"({len(ethernet_parents)} ethernet + {len(ethernet_subinterfaces)} eth-subs, "
+                f"{len(aggregate_parents)} aggregate + {len(aggregate_subinterfaces)} ae-subs, "
                 f"{len(loopback_interfaces)} loopback, {len(tunnel_interfaces)} tunnel). "
-                "Physical interfaces are device-scoped in SCM and cannot be pushed to a folder — "
-                "they must be configured per-device in SCM device management. "
-                "Interface data is preserved in the export JSON under network.interfaces."
+                "Bind each $variable to the real device interface in SCM device management."
             ),
         })
 
@@ -271,6 +273,8 @@ def build_export(
                 "tunnel": tunnel_interfaces,
                 "ethernet": ethernet_parents,
                 "ethernet_subinterfaces": ethernet_subinterfaces,
+                "aggregate": aggregate_parents,
+                "aggregate_subinterfaces": aggregate_subinterfaces,
             },
         },
         "objects": {
@@ -362,7 +366,8 @@ def write_export(data: dict, output_path: str) -> None:
         f"{len(net.get('ipsec_tunnels', []))} ipsec_tunnel  "
         f"{len(ifaces.get('loopback', []))} loopback  "
         f"{len(ifaces.get('tunnel', []))} tunnel  "
-        f"{len(ifaces.get('ethernet', []))} eth({len(ifaces.get('ethernet_subinterfaces', []))} subs)",
+        f"{len(ifaces.get('ethernet', []))} eth({len(ifaces.get('ethernet_subinterfaces', []))} subs)  "
+        f"{len(ifaces.get('aggregate', []))} ae({len(ifaces.get('aggregate_subinterfaces', []))} subs)",
         file=sys.stderr,
     )
     print(

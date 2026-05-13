@@ -642,6 +642,65 @@ def export_ethernet_interfaces(
     return parents, subinterfaces
 
 
+def export_aggregate_interfaces(
+    network_root: Element | None,
+) -> tuple[list[dict], list[dict]]:
+    """Return (parent_ae_interfaces, layer3_subinterfaces).
+
+    Parent aggregate interfaces (ae1, ae2…) are pushed as $ae-N variables.
+    Subinterfaces (ae1.1, ae1.2…) carry IP/VLAN config and are pushed separately.
+    """
+    if network_root is None:
+        return [], []
+    container = network_root.find("interface/aggregate-ethernet")
+    if container is None:
+        return [], []
+    parents: list[dict] = []
+    subinterfaces: list[dict] = []
+
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        layer3 = entry.find("layer3")
+        layer2 = entry.find("layer2")
+
+        parent: dict = {"name": name}
+        comment = entry.findtext("comment")
+        if comment:
+            parent["comment"] = comment
+
+        if layer3 is not None:
+            layer3_d: dict = {}
+            ips = [e.get("name", "") for e in layer3.findall("ip/entry") if e.get("name")]
+            if ips:
+                layer3_d["ip"] = [{"name": ip} for ip in ips]
+            parent["layer3"] = layer3_d
+
+            for unit in layer3.findall("units/entry"):
+                sub: dict = {"name": unit.get("name", ""), "parent_interface": name}
+                tag = unit.findtext("tag")
+                if tag:
+                    sub["tag"] = int(tag)
+                sub_comment = unit.findtext("comment")
+                if sub_comment:
+                    sub["comment"] = sub_comment
+                mtu = unit.findtext("mtu")
+                if mtu:
+                    sub["mtu"] = int(mtu)
+                mgmt = unit.findtext("interface-management-profile")
+                if mgmt:
+                    sub["interface_management_profile"] = mgmt
+                sub_ips = [e.get("name", "") for e in unit.findall("ip/entry") if e.get("name")]
+                if sub_ips:
+                    sub["ip"] = [{"name": ip} for ip in sub_ips]
+                subinterfaces.append(sub)
+        elif layer2 is not None:
+            parent["layer2"] = {}
+
+        parents.append(parent)
+
+    return parents, subinterfaces
+
+
 def export_decryption_rules(vsys_root) -> list[dict]:
     """Export SSL/TLS decryption policy rules."""
     out = []
@@ -973,6 +1032,12 @@ def export_vulnerability_protection_profiles(vsys_root) -> list[dict]:
         "name": "default", "severity": ["any"], "host": "any",
         "cve": ["any"], "vendor_id": ["any"], "category": "any", "threat_name": "any",
     }
+    # SCM SDK VulnerabilityProfileCategory enum — values outside this set map to "any"
+    _VALID_VULN_CATEGORIES = {
+        "any", "brute-force", "code-execution", "code-obfuscation", "command-execution",
+        "dos", "exploit-kit", "info-leak", "insecure-credentials", "overflow",
+        "phishing", "protocol-anomaly", "scan", "sql-injection",
+    }
     out = []
     if vsys_root is None:
         return out
@@ -980,7 +1045,7 @@ def export_vulnerability_protection_profiles(vsys_root) -> list[dict]:
     if container is None:
         return out
     for entry in container.findall("entry"):
-        name = entry.get("name", "")
+        name = entry.get("name", "").replace(" ", "-")
         desc = entry.findtext("description") or ""
         rules = []
         for rule_el in entry.findall("rules/entry"):
@@ -990,6 +1055,8 @@ def export_vulnerability_protection_profiles(vsys_root) -> list[dict]:
             cves = get_members(rule_el, "cve/member")
             vendor_ids = get_members(rule_el, "vendor-id/member")
             category = rule_el.findtext("category") or "any"
+            if category not in _VALID_VULN_CATEGORIES:
+                category = "any"
             threat_name = rule_el.findtext("threat-name") or "any"
             rule: dict = {
                 "name": rule_name,
@@ -1144,6 +1211,12 @@ def export_application_filters(vsys_root) -> list[dict]:
             d["technology"] = technologies
         if risks:
             d["risk"] = risks
+        new_appid = entry.findtext("new-appid")
+        if new_appid == "yes":
+            d["new_appid"] = True
+        excludes = get_members(entry, "exclude/member")
+        if excludes:
+            d["exclude"] = excludes
         out.append(d)
     out.sort(key=lambda x: x["name"].lower())
     return out
