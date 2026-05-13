@@ -6,4 +6,8 @@ parsers/__pycache__/
 sample-config.xml
 *.xml
 export.json
+*-export.json
 migration-report-*.txt
+
+# Customer-specific checklists — contain sensitive network/IP data, never commit
+*-checklist.md
