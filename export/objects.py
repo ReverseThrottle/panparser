@@ -1218,13 +1218,12 @@ def export_dos_protection_profiles(vsys_root) -> list[dict]:
         if desc:
             d["description"] = desc
 
-        # type: aggregate or classified
+        # type: aggregate or classified — SCM requires this field; PAN-OS defaults to aggregate
         type_el = entry.find("type")
-        if type_el is not None:
-            if type_el.find("aggregate") is not None:
-                d["type"] = "aggregate"
-            elif type_el.find("classified") is not None:
-                d["type"] = "classified"
+        if type_el is not None and type_el.find("classified") is not None:
+            d["type"] = "classified"
+        else:
+            d["type"] = "aggregate"
 
         # flood protection settings
         flood_el = entry.find("flood")
