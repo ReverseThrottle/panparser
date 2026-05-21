@@ -41,6 +41,7 @@ from export.objects import (
     export_file_blocking_profiles,
     export_zone_protection_profiles,
     export_dos_protection_profiles,
+    export_dos_protection_rules,
     export_custom_applications,
     export_application_filters,
     export_schedules,
@@ -152,6 +153,7 @@ def build_export(
     file_blocking_profiles          = export_file_blocking_profiles(vsys_root)
     zone_protection_profiles        = export_zone_protection_profiles(network_root)
     dos_protection_profiles         = export_dos_protection_profiles(vsys_root)
+    dos_protection_rules            = export_dos_protection_rules(vsys_root)
 
     custom_applications     = export_custom_applications(vsys_root)
     application_filters     = export_application_filters(vsys_root)
@@ -198,15 +200,14 @@ def build_export(
             ),
         })
 
-    # DoS protection profiles have no SDK support — flag as manual step
-    if dos_protection_profiles:
+    if dos_protection_profiles or dos_protection_rules:
         warnings.append({
-            "severity": "warn",
+            "severity": "info",
             "object_path": "security_profiles/dos_protection",
             "message": (
-                f"{len(dos_protection_profiles)} DoS protection profile(s) exported for reference "
-                "but cannot be pushed — no SCM SDK module exists for this object type. "
-                "Recreate these profiles manually in SCM after migration."
+                f"{len(dos_protection_profiles)} DoS protection profile(s) and "
+                f"{len(dos_protection_rules)} DoS protection rule(s) exported and will be "
+                "pushed to SCM via direct REST API during migration."
             ),
         })
 
@@ -310,6 +311,7 @@ def build_export(
             "authentication_rules": authentication_rules,
             "pbf_rules": pbf_rules,
             "qos_rules": qos_rules,
+            "dos_protection_rules": dos_protection_rules,
         },
         "zones": zones,
         "security_profiles": {
@@ -425,7 +427,8 @@ def write_export(data: dict, output_path: str) -> None:
         f"{len(sec_profiles.get('dns_security',[]))} dns_sec  "
         f"{len(sec_profiles.get('file_blocking',[]))} file_block  "
         f"{len(sec_profiles.get('zone_protection',[]))} zone_prot  "
-        f"{len(sec_profiles.get('dos_protection',[]))} dos_prot(ref-only)",
+        f"{len(sec_profiles.get('dos_protection',[]))} dos_prot  "
+        f"{len(pol.get('dos_protection_rules',[]))} dos_rules",
         file=sys.stderr,
     )
     if warns:
