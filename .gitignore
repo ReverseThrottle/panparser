@@ -7,7 +7,7 @@ sample-config.xml
 *.xml
 export.json
 *-export.json
-migration-report-*.txt
+logs/
 
 # Customer-specific checklists — contain sensitive network/IP data, never commit
 *-checklist.md
