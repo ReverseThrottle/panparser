@@ -562,52 +562,101 @@ def export_interface_management_profiles(network_root: Element | None) -> list[d
     return out
 
 
-def export_loopback_interfaces(network_root: Element | None) -> list[dict]:
-    """Loopback subinterfaces live at interface/loopback/units/entry."""
+def export_loopback_interfaces(network_root: Element | None) -> tuple[list[dict], list[str]]:
+    """Loopback interfaces: numbered units at interface/loopback/units/entry.
+
+    Also detects the bare 'loopback' parent when it carries IPs or a management
+    profile directly (no unit number). Exports it as 'loopback.1' and emits a
+    migration note. Skipped if 'loopback.1' already exists as a numbered unit.
+    """
     if network_root is None:
-        return []
-    units = network_root.find("interface/loopback/units")
-    if units is None:
-        return []
-    out = []
-    for entry in units.findall("entry"):
-        name = entry.get("name", "")
-        d: dict = {"name": name}
-        comment = entry.findtext("comment")
-        if comment:
-            d["comment"] = comment
-        mtu = entry.findtext("mtu")
-        if mtu:
-            d["mtu"] = int(mtu)
-        mgmt = entry.findtext("interface-management-profile")
-        if mgmt:
-            d["interface_management_profile"] = mgmt
-        ips = [e.get("name", "") for e in entry.findall("ip/entry") if e.get("name")]
-        if ips:
-            d["ip"] = [{"name": ip} for ip in ips]
+        return [], []
+    lo_root = network_root.find("interface/loopback")
+    if lo_root is None:
+        return [], []
+
+    notes: list[str] = []
+    out: list[dict] = []
+
+    units = lo_root.find("units")
+    unit_names = {e.get("name", "") for e in units.findall("entry")} if units is not None else set()
+
+    parent_ips = [e.get("name", "") for e in lo_root.findall("ip/entry") if e.get("name")]
+    parent_mgmt = lo_root.findtext("interface-management-profile")
+    if (parent_ips or parent_mgmt) and "loopback.1" not in unit_names:
+        d: dict = {"name": "loopback.1"}
+        if parent_mgmt:
+            d["interface_management_profile"] = parent_mgmt
+        if parent_ips:
+            d["ip"] = [{"name": ip} for ip in parent_ips]
         out.append(d)
-    return out
+        notes.append(
+            "Bare 'loopback' parent interface (no unit number) normalized to 'loopback.1' "
+            "— IPs and management profile carried over. Verify unit assignment in SCM."
+        )
+
+    if units is not None:
+        for entry in units.findall("entry"):
+            name = entry.get("name", "")
+            d = {"name": name}
+            comment = entry.findtext("comment")
+            if comment:
+                d["comment"] = comment
+            mtu = entry.findtext("mtu")
+            if mtu:
+                d["mtu"] = int(mtu)
+            mgmt = entry.findtext("interface-management-profile")
+            if mgmt:
+                d["interface_management_profile"] = mgmt
+            ips = [e.get("name", "") for e in entry.findall("ip/entry") if e.get("name")]
+            if ips:
+                d["ip"] = [{"name": ip} for ip in ips]
+            out.append(d)
+
+    return out, notes
 
 
-def export_tunnel_interfaces(network_root: Element | None) -> list[dict]:
-    """Tunnel subinterfaces live at interface/tunnel/units/entry."""
+def export_tunnel_interfaces(network_root: Element | None) -> tuple[list[dict], list[str]]:
+    """Tunnel interfaces: numbered units at interface/tunnel/units/entry.
+
+    Also detects the bare 'tunnel' parent when it carries IPs directly.
+    Exports it as 'tunnel.1' and emits a migration note.
+    Skipped if 'tunnel.1' already exists as a numbered unit.
+    """
     if network_root is None:
-        return []
-    units = network_root.find("interface/tunnel/units")
-    if units is None:
-        return []
-    out = []
-    for entry in units.findall("entry"):
-        name = entry.get("name", "")
-        d: dict = {"name": name}
-        comment = entry.findtext("comment")
-        if comment:
-            d["comment"] = comment
-        ips = [e.get("name", "") for e in entry.findall("ip/entry") if e.get("name")]
-        if ips:
-            d["ip"] = [{"name": ip} for ip in ips]
+        return [], []
+    tun_root = network_root.find("interface/tunnel")
+    if tun_root is None:
+        return [], []
+
+    notes: list[str] = []
+    out: list[dict] = []
+
+    units = tun_root.find("units")
+    unit_names = {e.get("name", "") for e in units.findall("entry")} if units is not None else set()
+
+    parent_ips = [e.get("name", "") for e in tun_root.findall("ip/entry") if e.get("name")]
+    if parent_ips and "tunnel.1" not in unit_names:
+        d: dict = {"name": "tunnel.1", "ip": [{"name": ip} for ip in parent_ips]}
         out.append(d)
-    return out
+        notes.append(
+            "Bare 'tunnel' parent interface (no unit number) normalized to 'tunnel.1' "
+            "— IPs carried over. Verify unit assignment in SCM."
+        )
+
+    if units is not None:
+        for entry in units.findall("entry"):
+            name = entry.get("name", "")
+            d = {"name": name}
+            comment = entry.findtext("comment")
+            if comment:
+                d["comment"] = comment
+            ips = [e.get("name", "") for e in entry.findall("ip/entry") if e.get("name")]
+            if ips:
+                d["ip"] = [{"name": ip} for ip in ips]
+            out.append(d)
+
+    return out, notes
 
 
 def export_ethernet_interfaces(
