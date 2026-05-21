@@ -1172,9 +1172,172 @@ def export_zone_protection_profiles(network_root) -> list[dict]:
     return out
 
 
+def _parse_flood_proto(el: Element) -> dict:
+    """Parse a single flood protocol element (tcp-syn, udp, icmp, icmpv6, other-ip)."""
+    out: dict = {}
+    enable_text = el.findtext("enable")
+    if enable_text is not None:
+        out["enable"] = enable_text.lower() == "yes"
+    for section in ("red", "syn-cookies"):
+        sec_el = el.find(section)
+        if sec_el is None:
+            continue
+        sec: dict = {}
+        for rate_key in ("alarm-rate", "activate-rate", "maximal-rate"):
+            val = sec_el.findtext(rate_key)
+            if val is not None:
+                try:
+                    sec[rate_key] = int(val)
+                except ValueError:
+                    pass
+        block_el = sec_el.find("block")
+        if block_el is not None:
+            dur = block_el.findtext("duration")
+            if dur is not None:
+                try:
+                    sec["block"] = {"duration": int(dur)}
+                except ValueError:
+                    pass
+        if sec:
+            out[section] = sec
+    return out
+
+
 def export_dos_protection_profiles(vsys_root) -> list[dict]:
-    """Export DoS protection profiles — exported for reference only, no SDK push."""
-    return _export_named_profiles(vsys_root, "dos-protection")
+    """Export DoS protection profiles with full flood and resource settings."""
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("profiles/dos-protection")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        d: dict = {"name": name}
+        desc = entry.findtext("description")
+        if desc:
+            d["description"] = desc
+
+        # type: aggregate or classified
+        type_el = entry.find("type")
+        if type_el is not None:
+            if type_el.find("aggregate") is not None:
+                d["type"] = "aggregate"
+            elif type_el.find("classified") is not None:
+                d["type"] = "classified"
+
+        # flood protection settings
+        flood_el = entry.find("flood")
+        if flood_el is not None:
+            flood: dict = {}
+            for proto in ("tcp-syn", "udp", "icmp", "icmpv6", "other-ip"):
+                proto_el = flood_el.find(proto)
+                if proto_el is not None:
+                    parsed = _parse_flood_proto(proto_el)
+                    if parsed:
+                        flood[proto] = parsed
+            if flood:
+                d["flood"] = flood
+
+        # resource protection settings
+        resource_el = entry.find("resource")
+        if resource_el is not None:
+            sessions_el = resource_el.find("sessions")
+            if sessions_el is not None:
+                sessions: dict = {}
+                enabled_text = sessions_el.findtext("enabled")
+                if enabled_text is not None:
+                    sessions["enabled"] = enabled_text.lower() == "yes"
+                limit = sessions_el.findtext("max-concurrent-limit")
+                if limit is not None:
+                    try:
+                        sessions["max-concurrent-limit"] = int(limit)
+                    except ValueError:
+                        pass
+                if sessions:
+                    d["resource"] = {"sessions": sessions}
+
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
+def export_dos_protection_rules(vsys_root) -> list[dict]:
+    """Export DoS protection rules from the vsys rulebase."""
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("rulebase/dos/rules") or vsys_root.find("dos/rules")
+    if container is None:
+        return out
+    for rule in container.findall("entry"):
+        name = rule.get("name", "")
+        d: dict = {"name": name}
+
+        disabled_text = rule.findtext("disabled")
+        d["disabled"] = disabled_text is not None and disabled_text.lower() == "yes"
+
+        # Zones: from/zone/member and to/zone/member
+        from_zones = get_members(rule, "from/zone/member")
+        d["from"] = from_zones if from_zones else ["any"]
+        to_zones = get_members(rule, "to/zone/member")
+        d["to"] = to_zones if to_zones else ["any"]
+
+        src = get_members(rule, "source/member")
+        d["source"] = src if src else ["any"]
+        dst = get_members(rule, "destination/member")
+        d["destination"] = dst if dst else ["any"]
+        src_user = get_members(rule, "source-user/member")
+        d["source_user"] = src_user if src_user else ["any"]
+        svc = get_members(rule, "service/member")
+        d["service"] = svc if svc else ["any"]
+
+        # action: deny / allow / protect
+        action_el = rule.find("action")
+        if action_el is not None:
+            action_tag = next((c.tag for c in action_el), None)
+            if action_tag:
+                d["action"] = {action_tag: {}}
+        else:
+            d["action"] = {"deny": {}}
+
+        # protection: aggregate or classified
+        prot_el = rule.find("protection")
+        if prot_el is not None:
+            agg_el = prot_el.find("aggregate")
+            cls_el = prot_el.find("classified")
+            if agg_el is not None:
+                profile_name = agg_el.findtext("profile") or ""
+                prot: dict = {"aggregate": {}}
+                if profile_name:
+                    prot["aggregate"]["profile"] = profile_name
+                d["protection"] = prot
+            elif cls_el is not None:
+                profile_name = cls_el.findtext("profile") or ""
+                prot = {"classified": {}}
+                if profile_name:
+                    prot["classified"]["profile"] = profile_name
+                for rate_key in ("alarm-rate", "activate-rate", "maximal-rate"):
+                    val = cls_el.findtext(rate_key)
+                    if val is not None:
+                        try:
+                            prot["classified"][rate_key] = int(val)
+                        except ValueError:
+                            pass
+                d["protection"] = prot
+
+        log_setting = rule.findtext("log-setting")
+        if log_setting:
+            d["log_setting"] = log_setting
+        schedule = rule.findtext("schedule")
+        if schedule:
+            d["schedule"] = schedule
+        tags = get_members(rule, "tag/member")
+        if tags:
+            d["tag"] = tags
+
+        out.append(d)
+    return out
 
 
 # ── Chunk 3: Applications, Schedules, EDLs, Server Profiles, Auth Profiles ───
