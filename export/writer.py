@@ -139,8 +139,8 @@ def build_export(
     ike_gateways          = export_ike_gateways(network_root)
     ipsec_tunnels         = export_ipsec_tunnels(network_root)
     interface_mgmt_profiles = export_interface_management_profiles(network_root)
-    loopback_interfaces   = export_loopback_interfaces(network_root)
-    tunnel_interfaces     = export_tunnel_interfaces(network_root)
+    loopback_interfaces, loopback_notes = export_loopback_interfaces(network_root)
+    tunnel_interfaces, tunnel_notes     = export_tunnel_interfaces(network_root)
     ethernet_parents, ethernet_subinterfaces = export_ethernet_interfaces(network_root)
     aggregate_parents, aggregate_subinterfaces = export_aggregate_interfaces(network_root)
 
@@ -249,6 +249,12 @@ def build_export(
                 f"{len(loopback_interfaces)} loopback, {len(tunnel_interfaces)} tunnel). "
                 "Bind each $variable to the real device interface in SCM device management."
             ),
+        })
+    for note in loopback_notes + tunnel_notes:
+        warnings.append({
+            "severity": "warn",
+            "object_path": "network/interfaces",
+            "message": note,
         })
 
     # Build a unified rename map for all objects with trailing underscores
