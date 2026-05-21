@@ -24,12 +24,33 @@ def render_interfaces(network_root: Element | None, console, grep: str | None = 
         console.print("[dim]No interfaces found.[/dim]")
         return
 
-    for itype, itype_label in (("ethernet", "ethernet"), ("loopback", "loopback"),
-                                ("tunnel", "tunnel"), ("vlan", "vlan"), ("aggregate-ethernet", "ae")):
+    # Ethernet and AE: named entries are direct children of the container
+    for itype, itype_label in (("ethernet", "ethernet"), ("aggregate-ethernet", "ae")):
         container = iface_root.find(itype)
         if container is None:
             continue
         for entry in container.findall("entry"):
+            name = entry.get("name", "")
+            ip, mode, subs = _extract_iface_detail(entry)
+            comment = entry.findtext("comment") or ""
+            rows.append((name, itype_label, ip, mode, subs, comment))
+
+    # Loopback, tunnel, vlan: named entries are under <units/entry>;
+    # bare parent may also carry IPs/management profile directly.
+    for itype, itype_label, bare_name in (
+        ("loopback", "loopback", "loopback"),
+        ("tunnel",   "tunnel",   "tunnel"),
+        ("vlan",     "vlan",     "vlan"),
+    ):
+        container = iface_root.find(itype)
+        if container is None:
+            continue
+        unit_names = {e.get("name", "") for e in container.findall("units/entry")}
+        parent_ip = _get_first_ip(container)
+        parent_mgmt = container.findtext("interface-management-profile")
+        if (parent_ip or parent_mgmt) and f"{bare_name}.1" not in unit_names:
+            rows.append((bare_name, itype_label, parent_ip or "", "", [], ""))
+        for entry in container.findall("units/entry"):
             name = entry.get("name", "")
             ip, mode, subs = _extract_iface_detail(entry)
             comment = entry.findtext("comment") or ""

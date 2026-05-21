@@ -30,6 +30,7 @@ from export.objects import (
     export_interface_management_profiles,
     export_loopback_interfaces,
     export_tunnel_interfaces,
+    export_vlan_interfaces,
     export_ethernet_interfaces,
     export_aggregate_interfaces,
     export_anti_spyware_profiles,
@@ -141,6 +142,7 @@ def build_export(
     interface_mgmt_profiles = export_interface_management_profiles(network_root)
     loopback_interfaces, loopback_notes = export_loopback_interfaces(network_root)
     tunnel_interfaces, tunnel_notes     = export_tunnel_interfaces(network_root)
+    vlan_interfaces, vlan_notes         = export_vlan_interfaces(network_root)
     ethernet_parents, ethernet_subinterfaces = export_ethernet_interfaces(network_root)
     aggregate_parents, aggregate_subinterfaces = export_aggregate_interfaces(network_root)
 
@@ -234,7 +236,7 @@ def build_export(
             ),
         })
     total_ifaces = (
-        len(loopback_interfaces) + len(tunnel_interfaces)
+        len(loopback_interfaces) + len(tunnel_interfaces) + len(vlan_interfaces)
         + len(ethernet_parents) + len(ethernet_subinterfaces)
         + len(aggregate_parents) + len(aggregate_subinterfaces)
     )
@@ -246,11 +248,12 @@ def build_export(
                 f"{total_ifaces} interface(s) exported as SCM $variable templates "
                 f"({len(ethernet_parents)} ethernet + {len(ethernet_subinterfaces)} eth-subs, "
                 f"{len(aggregate_parents)} aggregate + {len(aggregate_subinterfaces)} ae-subs, "
-                f"{len(loopback_interfaces)} loopback, {len(tunnel_interfaces)} tunnel). "
+                f"{len(loopback_interfaces)} loopback, {len(tunnel_interfaces)} tunnel, "
+                f"{len(vlan_interfaces)} vlan). "
                 "Bind each $variable to the real device interface in SCM device management."
             ),
         })
-    for note in loopback_notes + tunnel_notes:
+    for note in loopback_notes + tunnel_notes + vlan_notes:
         warnings.append({
             "severity": "warn",
             "object_path": "network/interfaces",
@@ -281,6 +284,7 @@ def build_export(
             "interfaces": {
                 "loopback": loopback_interfaces,
                 "tunnel": tunnel_interfaces,
+                "vlan": vlan_interfaces,
                 "ethernet": ethernet_parents,
                 "ethernet_subinterfaces": ethernet_subinterfaces,
                 "aggregate": aggregate_parents,
@@ -377,6 +381,7 @@ def write_export(data: dict, output_path: str) -> None:
         f"{len(net.get('ipsec_tunnels', []))} ipsec_tunnel  "
         f"{len(ifaces.get('loopback', []))} loopback  "
         f"{len(ifaces.get('tunnel', []))} tunnel  "
+        f"{len(ifaces.get('vlan', []))} vlan  "
         f"{len(ifaces.get('ethernet', []))} eth({len(ifaces.get('ethernet_subinterfaces', []))} subs)  "
         f"{len(ifaces.get('aggregate', []))} ae({len(ifaces.get('aggregate_subinterfaces', []))} subs)",
         file=sys.stderr,
