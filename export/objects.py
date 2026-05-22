@@ -659,6 +659,60 @@ def export_tunnel_interfaces(network_root: Element | None) -> tuple[list[dict], 
     return out, notes
 
 
+def export_vlan_interfaces(network_root: Element | None) -> tuple[list[dict], list[str]]:
+    """VLAN interfaces: numbered units at interface/vlan/units/entry.
+
+    Also detects the bare 'vlan' parent when it carries IPs or a management
+    profile directly. Exports it as 'vlan.1' and emits a migration note.
+    Skipped if 'vlan.1' already exists as a numbered unit.
+    """
+    if network_root is None:
+        return [], []
+    vlan_root = network_root.find("interface/vlan")
+    if vlan_root is None:
+        return [], []
+
+    notes: list[str] = []
+    out: list[dict] = []
+
+    units = vlan_root.find("units")
+    unit_names = {e.get("name", "") for e in units.findall("entry")} if units is not None else set()
+
+    parent_ips = [e.get("name", "") for e in vlan_root.findall("ip/entry") if e.get("name")]
+    parent_mgmt = vlan_root.findtext("interface-management-profile")
+    if (parent_ips or parent_mgmt) and "vlan.1" not in unit_names:
+        d: dict = {"name": "vlan.1"}
+        if parent_mgmt:
+            d["interface_management_profile"] = parent_mgmt
+        if parent_ips:
+            d["ip"] = [{"name": ip} for ip in parent_ips]
+        out.append(d)
+        notes.append(
+            "Bare 'vlan' parent interface (no unit number) normalized to 'vlan.1' "
+            "— IPs and management profile carried over. Verify unit assignment in SCM."
+        )
+
+    if units is not None:
+        for entry in units.findall("entry"):
+            name = entry.get("name", "")
+            d = {"name": name}
+            comment = entry.findtext("comment")
+            if comment:
+                d["comment"] = comment
+            mtu = entry.findtext("mtu")
+            if mtu:
+                d["mtu"] = int(mtu)
+            mgmt = entry.findtext("interface-management-profile")
+            if mgmt:
+                d["interface_management_profile"] = mgmt
+            ips = [e.get("name", "") for e in entry.findall("ip/entry") if e.get("name")]
+            if ips:
+                d["ip"] = [{"name": ip} for ip in ips]
+            out.append(d)
+
+    return out, notes
+
+
 def export_ethernet_interfaces(
     network_root: Element | None,
 ) -> tuple[list[dict], list[dict]]:

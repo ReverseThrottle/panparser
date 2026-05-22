@@ -6,7 +6,7 @@ from ._helpers import iter_entries, get_members
 from .addresses import _extract_addr
 from .services import _extract_service
 from .zones import _extract_zone_type
-from .interfaces import _extract_iface_detail, _iface_sort_key
+from .interfaces import _extract_iface_detail, _iface_sort_key, _get_first_ip
 from .routing import _extract_nexthop, _ip_sort_key
 from .profiles import PROFILE_TYPES, _summarize_profile
 from .applications import _extract_default_ports, _risk_color
@@ -140,13 +140,34 @@ def get_interfaces(network_root) -> list[tuple]:
     iface_root = network_root.find("interface")
     if iface_root is None:
         return rows
-    for itype, label in (("ethernet", "ethernet"), ("loopback", "loopback"),
-                          ("tunnel", "tunnel"), ("vlan", "vlan"),
-                          ("aggregate-ethernet", "ae")):
+    # Ethernet and AE: named entries are direct children of the container
+    for itype, label in (("ethernet", "ethernet"), ("aggregate-ethernet", "ae")):
         container = iface_root.find(itype)
         if container is None:
             continue
         for entry in container.findall("entry"):
+            name = entry.get("name", "")
+            ip, mode, subs = _extract_iface_detail(entry)
+            comment = entry.findtext("comment") or ""
+            ip_or_mode = ip if ip else mode
+            rows.append((name, label, ip_or_mode, "; ".join(subs), comment))
+
+    # Loopback, tunnel, vlan: named entries are under <units/entry>;
+    # bare parent may also carry IPs/management profile directly.
+    for itype, label, bare_name in (
+        ("loopback", "loopback", "loopback"),
+        ("tunnel",   "tunnel",   "tunnel"),
+        ("vlan",     "vlan",     "vlan"),
+    ):
+        container = iface_root.find(itype)
+        if container is None:
+            continue
+        unit_names = {e.get("name", "") for e in container.findall("units/entry")}
+        parent_ip = _get_first_ip(container)
+        parent_mgmt = container.findtext("interface-management-profile")
+        if (parent_ip or parent_mgmt) and f"{bare_name}.1" not in unit_names:
+            rows.append((bare_name, label, parent_ip or "", "", ""))
+        for entry in container.findall("units/entry"):
             name = entry.get("name", "")
             ip, mode, subs = _extract_iface_detail(entry)
             comment = entry.findtext("comment") or ""
