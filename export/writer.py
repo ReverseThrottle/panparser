@@ -221,10 +221,23 @@ def build_export(
             "message": (
                 f"{len(ike_gateways)} IKE gateway(s) exported with placeholder PSK "
                 "('MIGRATION-PLACEHOLDER-PSK'). Update each gateway's pre-shared key "
-                "in SCM after migration. The local-address field is also not supported "
-                "by the SCM SDK and was skipped."
+                "in SCM after migration."
             ),
         })
+        for gw in ike_gateways:
+            local_ip    = gw.pop("_local_ip", "")
+            local_iface = gw.pop("_local_iface", "")
+            if local_ip or local_iface:
+                binding = local_iface or local_ip
+                warnings.append({
+                    "severity": "warn",
+                    "object_path": f"network/ike_gateways/{gw['name']}",
+                    "message": (
+                        f"IKE gateway '{gw['name']}' had local-address binding "
+                        f"({binding}) which is not supported by the SCM SDK and was "
+                        "skipped. Configure the local address binding in SCM after migration."
+                    ),
+                })
     total_ifaces = (
         len(loopback_interfaces) + len(tunnel_interfaces) + len(vlan_interfaces)
         + len(ethernet_parents) + len(ethernet_subinterfaces)
