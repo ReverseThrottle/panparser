@@ -1275,6 +1275,56 @@ def export_zone_protection_profiles(network_root) -> list[dict]:
     return out
 
 
+def export_lldp_profiles(network_root) -> list[dict]:
+    """Export LLDP profiles from network/profiles/lldp-profile."""
+    out = []
+    if network_root is None:
+        return out
+    container = network_root.find("profiles/lldp-profile")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        d: dict = {"name": name}
+        mode = entry.findtext("mode")
+        if mode:
+            d["mode"] = mode
+        snmp = entry.findtext("snmp-syslog-notification")
+        if snmp is not None:
+            d["snmp_syslog_notification"] = snmp.lower() == "yes"
+        tlvs_el = entry.find("option-tlvs")
+        if tlvs_el is not None:
+            tlvs: dict = {}
+            for scm_key, xml_tag in (
+                ("port_description", "port-description"),
+                ("system_name", "system-name"),
+                ("system_description", "system-description"),
+                ("system_capabilities", "system-capabilities"),
+            ):
+                val = tlvs_el.findtext(xml_tag)
+                if val is not None:
+                    tlvs[scm_key] = val.lower() == "yes"
+            mgmt_el = tlvs_el.find("management-address")
+            if mgmt_el is not None:
+                mgmt: dict = {}
+                enabled_text = mgmt_el.findtext("enabled")
+                if enabled_text is not None:
+                    mgmt["enabled"] = enabled_text.lower() == "yes"
+                iplist_el = mgmt_el.find("iplist")
+                if iplist_el is not None:
+                    mgmt["iplist"] = [
+                        {k: e.findtext(k) or "" for k in ("name", "interface", "ipv4", "ipv6")}
+                        for e in iplist_el.findall("entry")
+                    ]
+                if mgmt:
+                    tlvs["management_address"] = mgmt
+            if tlvs:
+                d["option_tlvs"] = tlvs
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
 def _parse_flood_proto(el: Element) -> dict:
     """Parse a single flood protocol element (tcp-syn, udp, icmp, icmpv6, other-ip)."""
     out: dict = {}
