@@ -924,16 +924,25 @@ def _get_bgp_export(vr_entry: Element, notes: list[str]) -> dict:
             peer_container = pg.find("peer")
             if peer_container is not None:
                 for peer in peer_container.findall("entry"):
+                    peer_name = peer.get("name", "")
+                    local_ip = peer.findtext("local-address/ip") or ""
+                    local_interface = peer.findtext("local-address/interface") or ""
                     peers.append({
-                        "name": peer.get("name", ""),
+                        "name": peer_name,
                         "enable": peer.findtext("enable") != "no",
                         "peer_as": peer.findtext("peer-as") or "",
                         "peer_ip": peer.findtext("peer-address/ip") or "",
-                        "local_ip": peer.findtext("local-address/ip") or "",
-                        "local_interface": peer.findtext("local-address/interface") or "",
+                        "local_ip": local_ip,
+                        "local_interface": local_interface,
                         "max_prefixes": peer.findtext("max-prefixes") or "",
                         "reflector_client": peer.findtext("reflector-client") or "",
                     })
+                    if local_interface and local_interface != "loopback" and not local_ip:
+                        notes.append(
+                            f"bgp peer '{peer_name}' in peer-group '{pg_name}': "
+                            f"local_interface set but no local_ip — migration tool will emit "
+                            f"local_address with interface only; verify SCM accepts interface-only binding"
+                        )
 
             base["peer_groups"].append({
                 "name": pg_name,
