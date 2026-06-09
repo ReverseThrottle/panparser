@@ -423,7 +423,9 @@ def export_ike_gateways(network_root: Element | None) -> list[dict]:
     """PSK keys are encrypted in PAN-OS XML — replaced with a placeholder.
 
     Admin must update each IKE gateway's PSK (or certificate) after migration.
-    The local-address field is also skipped — not supported in the SCM SDK.
+    Local-address bindings are captured as _local_ip/_local_iface metadata keys
+    so writer.py can emit per-gateway warnings; writer.py pops them before
+    serializing the list to JSON.
     """
     if network_root is None:
         return []
@@ -481,6 +483,14 @@ def export_ike_gateways(network_root: Element | None) -> list[dict]:
                 pc_d["fragmentation"] = {"enable": frag.findtext("enable") == "yes"}
             if pc_d:
                 d["protocol_common"] = pc_d
+
+        # Capture local-address binding as writer metadata (underscore-prefixed).
+        # These keys are stripped in writer.py before the list is serialized to JSON.
+        local_ip    = entry.findtext("local-address/ip") or ""
+        local_iface = entry.findtext("local-address/interface") or ""
+        if local_ip or local_iface:
+            d["_local_ip"]    = local_ip
+            d["_local_iface"] = local_iface
 
         out.append(d)
     return out
