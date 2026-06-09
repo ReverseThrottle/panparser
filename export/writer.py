@@ -225,16 +225,6 @@ def build_export(
                 "by the SCM SDK and was skipped."
             ),
         })
-    if ipsec_tunnels:
-        warnings.append({
-            "severity": "warn",
-            "object_path": "network/ipsec_tunnels",
-            "message": (
-                f"{len(ipsec_tunnels)} IPSec tunnel(s) exported without tunnel-interface "
-                "binding — the SCM SDK does not support this field. Link each tunnel "
-                "to its tunnel interface manually after migration."
-            ),
-        })
     total_ifaces = (
         len(loopback_interfaces) + len(tunnel_interfaces) + len(vlan_interfaces)
         + len(ethernet_parents) + len(ethernet_subinterfaces)

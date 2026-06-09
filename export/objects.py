@@ -487,10 +487,6 @@ def export_ike_gateways(network_root: Element | None) -> list[dict]:
 
 
 def export_ipsec_tunnels(network_root: Element | None) -> list[dict]:
-    """The tunnel-interface binding is skipped — not supported in the SCM SDK.
-
-    Admin must link the IPSec tunnel to its tunnel interface after migration.
-    """
     if network_root is None:
         return []
     container = network_root.find("tunnel/ipsec")
@@ -500,6 +496,10 @@ def export_ipsec_tunnels(network_root: Element | None) -> list[dict]:
     for entry in container.findall("entry"):
         name = entry.get("name", "")
         d: dict = {"name": name}
+
+        tunnel_iface = entry.findtext("tunnel-interface")
+        if tunnel_iface:
+            d["tunnel_interface"] = tunnel_iface
 
         ak = entry.find("auto-key")
         if ak is not None:
