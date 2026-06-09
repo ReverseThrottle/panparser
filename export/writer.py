@@ -40,6 +40,7 @@ from export.objects import (
     export_decryption_profiles,
     export_dns_security_profiles,
     export_file_blocking_profiles,
+    export_lldp_profiles,
     export_zone_protection_profiles,
     export_dos_protection_profiles,
     export_dos_protection_rules,
@@ -139,6 +140,7 @@ def build_export(
     ipsec_crypto_profiles = export_ipsec_crypto_profiles(network_root)
     ike_gateways          = export_ike_gateways(network_root)
     ipsec_tunnels         = export_ipsec_tunnels(network_root)
+    lldp_profiles           = export_lldp_profiles(network_root)
     interface_mgmt_profiles = export_interface_management_profiles(network_root)
     loopback_interfaces, loopback_notes = export_loopback_interfaces(network_root)
     tunnel_interfaces, tunnel_notes     = export_tunnel_interfaces(network_root)
@@ -212,6 +214,15 @@ def build_export(
                 "pushed to SCM via direct REST API during migration."
             ),
         })
+    if lldp_profiles:
+        warnings.append({
+            "severity": "info",
+            "object_path": "network/lldp_profiles",
+            "message": (
+                f"{len(lldp_profiles)} LLDP profile(s) exported and will be pushed to SCM "
+                "via direct REST API during migration."
+            ),
+        })
 
     # Migration warnings for VPN/interface known limitations
     if ike_gateways:
@@ -283,6 +294,7 @@ def build_export(
             "ipsec_crypto_profiles": ipsec_crypto_profiles,
             "ike_gateways": ike_gateways,
             "ipsec_tunnels": ipsec_tunnels,
+            "lldp_profiles": lldp_profiles,
             "interface_management_profiles": interface_mgmt_profiles,
             "interfaces": {
                 "loopback": loopback_interfaces,
@@ -382,6 +394,7 @@ def write_export(data: dict, output_path: str) -> None:
         f"{len(net.get('ipsec_crypto_profiles', []))} ipsec_crypto  "
         f"{len(net.get('ike_gateways', []))} ike_gw  "
         f"{len(net.get('ipsec_tunnels', []))} ipsec_tunnel  "
+        f"{len(net.get('lldp_profiles', []))} lldp_profile  "
         f"{len(ifaces.get('loopback', []))} loopback  "
         f"{len(ifaces.get('tunnel', []))} tunnel  "
         f"{len(ifaces.get('vlan', []))} vlan  "
