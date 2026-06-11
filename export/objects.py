@@ -1728,6 +1728,9 @@ def export_log_forwarding_profiles(vsys_root) -> list[dict]:
             http_refs = get_members(ml_entry, "send-http/using-http-setting/member")
             if http_refs:
                 ml["_http_refs"] = http_refs
+            snmp_refs = get_members(ml_entry, "send-snmptrap/using-snmptrap-setting/member")
+            if snmp_refs:
+                ml["_snmp_refs"] = snmp_refs
             match_list.append(ml)
         if match_list:
             d["match_list"] = match_list
@@ -1801,6 +1804,59 @@ def export_http_server_profiles(vsys_root) -> list[dict]:
         out.append(d)
     out.sort(key=lambda x: x["name"].lower())
     return out
+
+
+def export_snmp_trap_server_profiles(vsys_root) -> tuple[list[dict], list[dict]]:
+    """Export SNMP trap server profiles from vsys/log-settings/snmptrap.
+
+    Splits profiles into SNMPv2c and SNMPv3 lists based on the <version> child
+    tag.  Encrypted secrets (community / authpwd / privpwd) are replaced with
+    MIGRATION-PLACEHOLDER-* values; callers should emit a migration_warning.
+
+    Returns (snmp_v2c_server_profiles, snmp_v3_server_profiles).
+    """
+    v2c_out: list[dict] = []
+    v3_out: list[dict] = []
+    if vsys_root is None:
+        return v2c_out, v3_out
+    container = vsys_root.find("log-settings/snmptrap")
+    if container is None:
+        return v2c_out, v3_out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        version_el = entry.find("version")
+        if version_el is None:
+            continue
+        if version_el.find("v2c") is not None:
+            servers = []
+            for srv in version_el.findall("v2c/server/entry"):
+                servers.append({
+                    "name": srv.get("name", ""),
+                    "manager": srv.findtext("manager") or "",
+                    "community": "MIGRATION-PLACEHOLDER-COMMUNITY",
+                })
+            d: dict = {"name": name}
+            if servers:
+                d["server"] = servers
+            v2c_out.append(d)
+        elif version_el.find("v3") is not None:
+            servers = []
+            for srv in version_el.findall("v3/server/entry"):
+                servers.append({
+                    "name": srv.get("name", ""),
+                    "manager": srv.findtext("manager") or "",
+                    "user": srv.findtext("user") or "",
+                    "engineid": srv.findtext("engineid") or "",
+                    "authpwd": "MIGRATION-PLACEHOLDER-AUTHPWD",
+                    "privpwd": "MIGRATION-PLACEHOLDER-PRIVPWD",
+                })
+            d = {"name": name}
+            if servers:
+                d["server"] = servers
+            v3_out.append(d)
+    v2c_out.sort(key=lambda x: x["name"].lower())
+    v3_out.sort(key=lambda x: x["name"].lower())
+    return v2c_out, v3_out
 
 
 def export_authentication_profiles(vsys_root) -> list[dict]:

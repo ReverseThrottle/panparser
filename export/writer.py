@@ -51,6 +51,7 @@ from export.objects import (
     export_log_forwarding_profiles,
     export_syslog_server_profiles,
     export_http_server_profiles,
+    export_snmp_trap_server_profiles,
     export_authentication_profiles,
     export_radius_server_profiles,
     export_ldap_server_profiles,
@@ -166,6 +167,7 @@ def build_export(
     log_forwarding_profiles  = export_log_forwarding_profiles(vsys_root)
     syslog_server_profiles   = export_syslog_server_profiles(vsys_root)
     http_server_profiles     = export_http_server_profiles(vsys_root)
+    snmp_v2c_server_profiles, snmp_v3_server_profiles = export_snmp_trap_server_profiles(vsys_root)
     authentication_profiles  = export_authentication_profiles(vsys_root)
     radius_server_profiles   = export_radius_server_profiles(vsys_root)
     ldap_server_profiles     = export_ldap_server_profiles(vsys_root)
@@ -201,6 +203,27 @@ def build_export(
                 f"{len(saml_server_profiles)} SAML server profile(s) exported. "
                 "The referenced certificate object must exist in SCM before the push will succeed. "
                 "Create or import the certificate in SCM first."
+            ),
+        })
+    if snmp_v2c_server_profiles:
+        warnings.append({
+            "severity": "warn",
+            "object_path": "objects/snmp_v2c_server_profiles",
+            "message": (
+                f"{len(snmp_v2c_server_profiles)} SNMPv2c server profile(s) exported with "
+                "'MIGRATION-PLACEHOLDER-COMMUNITY' replacing the encrypted community string. "
+                "Update each profile's community string in SCM after migration."
+            ),
+        })
+    if snmp_v3_server_profiles:
+        warnings.append({
+            "severity": "warn",
+            "object_path": "objects/snmp_v3_server_profiles",
+            "message": (
+                f"{len(snmp_v3_server_profiles)} SNMPv3 server profile(s) exported with "
+                "placeholder auth/priv passwords "
+                "('MIGRATION-PLACEHOLDER-AUTHPWD', 'MIGRATION-PLACEHOLDER-PRIVPWD'). "
+                "Update each profile's credentials in SCM after migration."
             ),
         })
 
@@ -322,6 +345,8 @@ def build_export(
             "log_forwarding_profiles": log_forwarding_profiles,
             "syslog_server_profiles": syslog_server_profiles,
             "http_server_profiles": http_server_profiles,
+            "snmp_v2c_server_profiles": snmp_v2c_server_profiles,
+            "snmp_v3_server_profiles": snmp_v3_server_profiles,
             "authentication_profiles": authentication_profiles,
             "radius_server_profiles": radius_server_profiles,
             "ldap_server_profiles": ldap_server_profiles,
