@@ -446,6 +446,8 @@ def write_export(data: dict, output_path: str) -> None:
         f"{len(objs.get('log_forwarding_profiles',[]))} lfps  "
         f"{len(objs.get('syslog_server_profiles',[]))} syslog_profiles  "
         f"{len(objs.get('http_server_profiles',[]))} http_profiles  "
+        f"{len(objs.get('snmp_v2c_server_profiles',[]))} snmp_v2c  "
+        f"{len(objs.get('snmp_v3_server_profiles',[]))} snmp_v3  "
         f"{len(objs.get('authentication_profiles',[]))} auth_profiles",
         file=sys.stderr,
     )
