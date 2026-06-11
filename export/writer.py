@@ -57,9 +57,7 @@ from export.objects import (
     export_kerberos_server_profiles,
     export_saml_server_profiles,
     export_tacacs_server_profiles,
-    export_management_interface,
-    export_service_settings,
-    export_service_routes,
+    export_device_setup,
 )
 
 
@@ -177,9 +175,7 @@ def build_export(
     tacacs_server_profiles   = export_tacacs_server_profiles(vsys_root)
 
     # Device Setup — device-scoped, requires serial at push time
-    mgmt_interface  = export_management_interface(root)
-    service_settings = export_service_settings(root)
-    service_routes   = export_service_routes(root)
+    mgmt_interface, service_settings, service_routes = export_device_setup(root)
 
     # Identity server profiles with encrypted secrets — flag placeholder values
     _secret_profiles = (
