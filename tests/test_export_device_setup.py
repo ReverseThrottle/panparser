@@ -312,3 +312,25 @@ class TestExportServiceRoutes:
         result = export_service_routes(_root(xml))
         assert len(result) == 1
         assert result[0] == {"service": "dns"}
+
+    def test_entry_with_blank_name_skipped(self):
+        xml = """
+        <route>
+          <service>
+            <entry name="">
+              <source-address><interface>management</interface></source-address>
+            </entry>
+            <entry name="ntp">
+              <source-address><interface>management</interface></source-address>
+            </entry>
+          </service>
+        </route>
+        """
+        result = export_service_routes(_root(xml))
+        assert len(result) == 1
+        assert result[0]["service"] == "ntp"
+
+    def test_login_banner_is_stripped(self):
+        xml = "<login-banner>  Authorized access only  </login-banner>"
+        result = export_service_settings(_root(xml))
+        assert result["login_banner"] == "Authorized access only"

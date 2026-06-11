@@ -352,11 +352,6 @@ def build_export(
             "qos_rules": qos_rules,
             "dos_protection_rules": dos_protection_rules,
         },
-        "device_setup": {
-            "management_interface": mgmt_interface,
-            "service_settings": service_settings,
-            "service_routes": service_routes,
-        },
         "zones": zones,
         "security_profiles": {
             "anti_spyware": anti_spyware_profiles,
@@ -370,6 +365,13 @@ def build_export(
             "dos_protection": dos_protection_profiles,
         },
     }
+
+    if mgmt_interface or service_settings or service_routes:
+        data["device_setup"] = {
+            "management_interface": mgmt_interface,
+            "service_settings": service_settings,
+            "service_routes": service_routes,
+        }
 
     # Apply trailing-underscore normalization across all names and references
     if rename_map:

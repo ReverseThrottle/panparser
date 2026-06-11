@@ -2133,7 +2133,7 @@ def export_service_settings(root) -> dict:
 
     banner = sys_el.findtext("login-banner")
     if banner:
-        d["login_banner"] = banner
+        d["login_banner"] = banner.strip()
 
     update_server = sys_el.findtext("update-server")
     if update_server:
@@ -2159,6 +2159,8 @@ def export_service_routes(root) -> list[dict]:
     out = []
     for entry in route_container.findall("entry"):
         name = entry.get("name", "")
+        if not name:
+            continue
         iface = entry.findtext("source-address/interface") or ""
         src_ip = entry.findtext("source-address/ip-address") or ""
         d: dict = {"service": name}
