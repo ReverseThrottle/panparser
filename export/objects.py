@@ -2071,6 +2071,106 @@ def export_saml_server_profiles(vsys_root) -> list[dict]:
     return out
 
 
+def export_management_interface(root) -> dict:
+    """Export management interface config from deviceconfig/system.
+
+    Returns a dict with permitted_ip, protocol flags (ssh/https/ping/snmp/telnet),
+    and optional port overrides. Returns empty dict if no system node found.
+    """
+    sys_el = root.find("devices/entry/deviceconfig/system")
+    if sys_el is None:
+        return {}
+
+    d: dict = {}
+
+    permitted = [e.get("name", "") for e in sys_el.findall("permitted-ip/entry") if e.get("name")]
+    if permitted:
+        d["permitted_ip"] = permitted
+
+    for flag in ("ssh", "https", "ping", "snmp", "telnet"):
+        val = sys_el.findtext(flag)
+        if val is not None:
+            d[flag] = val.strip().lower() != "no"
+
+    for xml_field, key in (("ssh-port", "ssh_port"), ("https-port", "https_port")):
+        raw = sys_el.findtext(xml_field)
+        if raw:
+            try:
+                d[key] = int(raw)
+            except ValueError:
+                pass
+
+    return d
+
+
+def export_service_settings(root) -> dict:
+    """Export NTP, DNS, login-banner, and update-server from deviceconfig/system.
+
+    Returns a dict with ntp_primary, ntp_secondary, dns_primary, dns_secondary,
+    login_banner, and update_server. Returns empty dict if no system node found.
+    """
+    sys_el = root.find("devices/entry/deviceconfig/system")
+    if sys_el is None:
+        return {}
+
+    d: dict = {}
+
+    ntp_primary = sys_el.findtext("ntp-servers/primary-ntp-server/ntp-server-address")
+    if ntp_primary:
+        d["ntp_primary"] = ntp_primary.strip()
+
+    ntp_secondary = sys_el.findtext("ntp-servers/secondary-ntp-server/ntp-server-address")
+    if ntp_secondary:
+        d["ntp_secondary"] = ntp_secondary.strip()
+
+    dns_primary = sys_el.findtext("dns-setting/servers/primary")
+    if dns_primary:
+        d["dns_primary"] = dns_primary.strip()
+
+    dns_secondary = sys_el.findtext("dns-setting/servers/secondary")
+    if dns_secondary:
+        d["dns_secondary"] = dns_secondary.strip()
+
+    banner = sys_el.findtext("login-banner")
+    if banner:
+        d["login_banner"] = banner
+
+    update_server = sys_el.findtext("update-server")
+    if update_server:
+        d["update_server"] = update_server.strip()
+
+    return d
+
+
+def export_service_routes(root) -> list[dict]:
+    """Export per-service routing entries from deviceconfig/system/route.
+
+    Each entry maps a service name (dns, ntp, syslog, etc.) to a source interface
+    and optional source IP. Returns empty list if no route entries found.
+    """
+    sys_el = root.find("devices/entry/deviceconfig/system")
+    if sys_el is None:
+        return []
+
+    route_container = sys_el.find("route/service")
+    if route_container is None:
+        return []
+
+    out = []
+    for entry in route_container.findall("entry"):
+        name = entry.get("name", "")
+        iface = entry.findtext("source-address/interface") or ""
+        src_ip = entry.findtext("source-address/ip-address") or ""
+        d: dict = {"service": name}
+        if iface:
+            d["interface"] = iface
+        if src_ip:
+            d["source_ip"] = src_ip
+        out.append(d)
+
+    return out
+
+
 def export_tacacs_server_profiles(vsys_root) -> list[dict]:
     """Export TACACS+ server profiles from vsys/server-profile/tacacs-plus.
 
