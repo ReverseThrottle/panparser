@@ -58,6 +58,7 @@ from export.objects import (
     export_kerberos_server_profiles,
     export_saml_server_profiles,
     export_tacacs_server_profiles,
+    export_device_setup,
 )
 
 
@@ -175,6 +176,9 @@ def build_export(
     saml_server_profiles     = export_saml_server_profiles(vsys_root)
     tacacs_server_profiles   = export_tacacs_server_profiles(vsys_root)
 
+    # Device Setup — device-scoped, requires serial at push time
+    mgmt_interface, service_settings, service_routes = export_device_setup(root)
+
     # Identity server profiles with encrypted secrets — flag placeholder values
     _secret_profiles = (
         [(radius_server_profiles, "objects/radius_server_profiles", "RADIUS")]
@@ -244,6 +248,25 @@ def build_export(
             "message": (
                 f"{len(lldp_profiles)} LLDP profile(s) exported and will be pushed to SCM "
                 "via direct REST API during migration."
+            ),
+        })
+
+    _device_setup_sections = []
+    if mgmt_interface:
+        _device_setup_sections.append("management_interface")
+    if service_settings:
+        _device_setup_sections.append("service_settings")
+    if service_routes:
+        _device_setup_sections.append(f"service_routes ({len(service_routes)} entries)")
+    if _device_setup_sections:
+        warnings.append({
+            "severity": "warn",
+            "object_path": "device_setup",
+            "message": (
+                f"Device Setup sections exported: {', '.join(_device_setup_sections)}. "
+                "These are device-scoped and cannot be pushed without a device serial number. "
+                "Pass device_serial to scm_migrate_panparser_export to push them, "
+                "or configure manually in SCM Device Management."
             ),
         })
 
@@ -377,6 +400,13 @@ def build_export(
         },
     }
 
+    if mgmt_interface or service_settings or service_routes:
+        data["device_setup"] = {
+            "management_interface": mgmt_interface,
+            "service_settings": service_settings,
+            "service_routes": service_routes,
+        }
+
     # Apply trailing-underscore normalization across all names and references
     if rename_map:
         data = _apply_renames(data, rename_map)
@@ -405,6 +435,7 @@ def write_export(data: dict, output_path: str) -> None:
     sec_profiles = data.get("security_profiles", {})
     vrs  = data.get("network", {}).get("virtual_routers", [])
     warns = data.get("migration_warnings", [])
+    dev_setup = data.get("device_setup", {})
 
     print(
         f"Exported to {output_path}  "
@@ -485,6 +516,18 @@ def write_export(data: dict, output_path: str) -> None:
         f"{len(pol.get('dos_protection_rules',[]))} dos_rules",
         file=sys.stderr,
     )
+    ds_parts = []
+    if dev_setup.get("management_interface"):
+        ds_parts.append("mgmt_iface")
+    if dev_setup.get("service_settings"):
+        ds_parts.append("svc_settings")
+    if dev_setup.get("service_routes"):
+        ds_parts.append(f"{len(dev_setup['service_routes'])} svc_routes")
+    if ds_parts:
+        print(
+            f"  device  : {' | '.join(ds_parts)}  (device-scoped — needs device_serial to push)",
+            file=sys.stderr,
+        )
     if warns:
         print(
             f"  {len(warns)} migration warning(s) — review 'migration_warnings' in the output",

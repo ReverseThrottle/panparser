@@ -2137,6 +2137,106 @@ def export_saml_server_profiles(vsys_root) -> list[dict]:
     return out
 
 
+_DEVICE_SYSTEM_PATH = "devices/entry/deviceconfig/system"
+
+
+def _mgmt_from_el(sys_el) -> dict:
+    d: dict = {}
+    permitted = [e.get("name", "") for e in sys_el.findall("permitted-ip/entry") if e.get("name")]
+    if permitted:
+        d["permitted_ip"] = permitted
+    for flag in ("ssh", "https", "ping", "snmp", "telnet"):
+        val = sys_el.findtext(flag)
+        if val is not None:
+            d[flag] = val.strip().lower() != "no"
+    for xml_field, key in (("ssh-port", "ssh_port"), ("https-port", "https_port")):
+        raw = sys_el.findtext(xml_field)
+        if raw:
+            try:
+                d[key] = int(raw)
+            except ValueError:
+                pass
+    return d
+
+
+def _svc_from_el(sys_el) -> dict:
+    d: dict = {}
+    ntp_primary = sys_el.findtext("ntp-servers/primary-ntp-server/ntp-server-address")
+    if ntp_primary:
+        d["ntp_primary"] = ntp_primary.strip()
+    ntp_secondary = sys_el.findtext("ntp-servers/secondary-ntp-server/ntp-server-address")
+    if ntp_secondary:
+        d["ntp_secondary"] = ntp_secondary.strip()
+    dns_primary = sys_el.findtext("dns-setting/servers/primary")
+    if dns_primary:
+        d["dns_primary"] = dns_primary.strip()
+    dns_secondary = sys_el.findtext("dns-setting/servers/secondary")
+    if dns_secondary:
+        d["dns_secondary"] = dns_secondary.strip()
+    banner = sys_el.findtext("login-banner")
+    if banner:
+        d["login_banner"] = banner.strip()
+    update_server = sys_el.findtext("update-server")
+    if update_server:
+        d["update_server"] = update_server.strip()
+    return d
+
+
+def _routes_from_el(sys_el) -> list[dict]:
+    route_container = sys_el.find("route/service")
+    if route_container is None:
+        return []
+    out = []
+    for entry in route_container.findall("entry"):
+        name = entry.get("name", "")
+        if not name:
+            continue
+        iface = entry.findtext("source-address/interface") or ""
+        src_ip = entry.findtext("source-address/ip-address") or ""
+        d: dict = {"service": name}
+        if iface:
+            d["interface"] = iface
+        if src_ip:
+            d["source_ip"] = src_ip
+        out.append(d)
+    return out
+
+
+def export_management_interface(root) -> dict:
+    """Export management interface config from deviceconfig/system."""
+    sys_el = root.find(_DEVICE_SYSTEM_PATH)
+    if sys_el is None:
+        return {}
+    return _mgmt_from_el(sys_el)
+
+
+def export_service_settings(root) -> dict:
+    """Export NTP, DNS, login-banner, and update-server from deviceconfig/system."""
+    sys_el = root.find(_DEVICE_SYSTEM_PATH)
+    if sys_el is None:
+        return {}
+    return _svc_from_el(sys_el)
+
+
+def export_service_routes(root) -> list[dict]:
+    """Export per-service routing entries from deviceconfig/system/route."""
+    sys_el = root.find(_DEVICE_SYSTEM_PATH)
+    if sys_el is None:
+        return []
+    return _routes_from_el(sys_el)
+
+
+def export_device_setup(root) -> tuple[dict, dict, list[dict]]:
+    """Export all three device setup sections with a single XPath traversal.
+
+    Returns (management_interface, service_settings, service_routes).
+    """
+    sys_el = root.find(_DEVICE_SYSTEM_PATH)
+    if sys_el is None:
+        return {}, {}, []
+    return _mgmt_from_el(sys_el), _svc_from_el(sys_el), _routes_from_el(sys_el)
+
+
 def export_tacacs_server_profiles(vsys_root) -> list[dict]:
     """Export TACACS+ server profiles from vsys/server-profile/tacacs-plus.
 
