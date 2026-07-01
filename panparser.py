@@ -18,6 +18,7 @@ from parsers.security import render_security_rules
 from parsers.nat import render_nat_rules
 from parsers.zones import render_zones
 from parsers.interfaces import render_interfaces
+from parsers.dhcp import render_dhcp_servers
 from parsers.routing import render_routing
 from parsers.tags import render_tags
 from parsers.profiles import render_profiles
@@ -53,6 +54,7 @@ SECTIONS = [
     "dos-rules",
     "zones",
     "interfaces",
+    "dhcp-servers",
     "routing",
     "tags",
     "profiles",
@@ -240,6 +242,8 @@ def main() -> None:
                                    render_zones(network_root, console, grep)),
         "interfaces":     lambda: (section_header(console, "Interfaces"),
                                    render_interfaces(network_root, console, grep)),
+        "dhcp-servers":   lambda: (section_header(console, "DHCP Servers"),
+                                   render_dhcp_servers(network_root, console, grep)),
         "routing":        lambda: (section_header(console, "Static Routes"),
                                    render_routing(network_root, console, grep)),
         "tags":           lambda: (section_header(console, "Tags"),

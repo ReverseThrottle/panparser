@@ -1335,6 +1335,76 @@ def export_lldp_profiles(network_root) -> list[dict]:
     return out
 
 
+def export_dhcp_servers(network_root) -> list[dict]:
+    """Export DHCP server configuration from network/dhcp/interface.
+
+    Covers an interface acting as a DHCP *server* (leases, IP pool,
+    reservations, DNS/gateway options). Separate from DHCP *client*
+    configuration on layer3 interfaces (network/interface/.../dhcp-client).
+    """
+    out = []
+    if network_root is None:
+        return out
+    container = network_root.find("dhcp/interface")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        if not name:
+            continue
+        server = entry.find("server")
+        if server is None:
+            continue
+
+        d: dict = {"interface": name}
+
+        mode = server.findtext("mode")
+        if mode:
+            d["mode"] = mode
+
+        probe_ip = server.findtext("probe-ip")
+        if probe_ip is not None:
+            d["probe_ip"] = probe_ip.lower() == "yes"
+
+        option = server.find("option")
+        if option is not None:
+            gateway = option.findtext("gateway")
+            if gateway:
+                d["gateway"] = gateway
+            subnet_mask = option.findtext("subnet-mask")
+            if subnet_mask:
+                d["subnet_mask"] = subnet_mask
+            dns_primary = option.findtext("dns/primary")
+            if dns_primary:
+                d["dns_primary"] = dns_primary
+            dns_secondary = option.findtext("dns/secondary")
+            if dns_secondary:
+                d["dns_secondary"] = dns_secondary
+            lease_timeout = option.findtext("lease/timeout")
+            if lease_timeout is not None:
+                try:
+                    d["lease_timeout"] = int(lease_timeout)
+                except ValueError:
+                    pass
+
+        ip_pool = [m.text for m in server.findall("ip-pool/member") if m.text]
+        if ip_pool:
+            d["ip_pool"] = ip_pool
+
+        reserved = []
+        for r in server.findall("reserved/entry"):
+            ip = r.get("name", "")
+            if not ip:
+                continue
+            reserved.append({"ip": ip, "mac": r.findtext("mac") or ""})
+        if reserved:
+            d["reserved"] = reserved
+
+        out.append(d)
+    out.sort(key=lambda x: x["interface"].lower())
+    return out
+
+
 def _parse_flood_proto(el: Element) -> dict:
     """Parse a single flood protocol element (tcp-syn, udp, icmp, icmpv6, other-ip)."""
     out: dict = {}
