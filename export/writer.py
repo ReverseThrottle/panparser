@@ -59,6 +59,7 @@ from export.objects import (
     export_saml_server_profiles,
     export_tacacs_server_profiles,
     export_device_setup,
+    export_high_availability,
 )
 
 
@@ -179,6 +180,9 @@ def build_export(
     # Device Setup — device-scoped, requires serial at push time
     mgmt_interface, service_settings, service_routes = export_device_setup(root)
 
+    # High Availability — device-scoped, no SCM push path for HA pairing
+    high_availability = export_high_availability(root)
+
     # Identity server profiles with encrypted secrets — flag placeholder values
     _secret_profiles = (
         [(radius_server_profiles, "objects/radius_server_profiles", "RADIUS")]
@@ -267,6 +271,19 @@ def build_export(
                 "These are device-scoped and cannot be pushed without a device serial number. "
                 "Pass device_serial to scm_migrate_panparser_export to push them, "
                 "or configure manually in SCM Device Management."
+            ),
+        })
+
+    if high_availability:
+        _ha_group = high_availability.get("group_id", "?")
+        _ha_peer = high_availability.get("peer_ip", "unknown peer")
+        warnings.append({
+            "severity": "warn",
+            "object_path": "high_availability",
+            "message": (
+                f"High Availability is enabled on the source device (group {_ha_group}, "
+                f"peer {_ha_peer}). SCM/folder-scoped migration has no path to push HA "
+                "pairing — HA must be reconfigured manually on the destination."
             ),
         })
 
@@ -407,6 +424,9 @@ def build_export(
             "service_routes": service_routes,
         }
 
+    if high_availability:
+        data["high_availability"] = high_availability
+
     # Apply trailing-underscore normalization across all names and references
     if rename_map:
         data = _apply_renames(data, rename_map)
@@ -436,6 +456,7 @@ def write_export(data: dict, output_path: str) -> None:
     vrs  = data.get("network", {}).get("virtual_routers", [])
     warns = data.get("migration_warnings", [])
     dev_setup = data.get("device_setup", {})
+    ha = data.get("high_availability", {})
 
     print(
         f"Exported to {output_path}  "
@@ -526,6 +547,12 @@ def write_export(data: dict, output_path: str) -> None:
     if ds_parts:
         print(
             f"  device  : {' | '.join(ds_parts)}  (device-scoped — needs device_serial to push)",
+            file=sys.stderr,
+        )
+    if ha:
+        print(
+            f"  ha      : group {ha.get('group_id', '?')}  mode {ha.get('mode', '?')}  "
+            f"peer {ha.get('peer_ip', '?')}  (must be reconfigured manually — no SCM push path)",
             file=sys.stderr,
         )
     if warns:

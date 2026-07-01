@@ -2237,6 +2237,83 @@ def export_device_setup(root) -> tuple[dict, dict, list[dict]]:
     return _mgmt_from_el(sys_el), _svc_from_el(sys_el), _routes_from_el(sys_el)
 
 
+_HA_PATH = "devices/entry/deviceconfig/high-availability"
+
+_HA_INTERFACE_TAGS = ("ha1", "ha1-backup", "ha2", "ha2-backup", "ha3")
+
+
+def _ha_iface_from_el(iface_el) -> dict:
+    d: dict = {}
+    port = iface_el.findtext("port")
+    if port:
+        d["port"] = port.strip()
+    ip_address = iface_el.findtext("ip-address")
+    if ip_address:
+        d["ip_address"] = ip_address.strip()
+    netmask = iface_el.findtext("netmask")
+    if netmask:
+        d["netmask"] = netmask.strip()
+    return d
+
+
+def export_high_availability(root) -> dict:
+    """Export HA pairing config from deviceconfig/high-availability.
+
+    Only returns data when HA is enabled — the goal is visibility into the
+    fact that this firewall is HA-paired (group id, peer, mode, election
+    priority, HA1/HA2/HA3 interface bindings), not a full push path. SCM's
+    folder-scoped migration has no mechanism to configure HA pairing, so
+    the caller is expected to always surface a migration_warning alongside
+    this data.
+    """
+    ha_el = root.find(_HA_PATH)
+    if ha_el is None:
+        return {}
+    if (ha_el.findtext("enabled") or "").strip().lower() != "yes":
+        return {}
+
+    d: dict = {"enabled": True}
+
+    group_el = ha_el.find("group")
+    if group_el is not None:
+        group_id_raw = group_el.findtext("group-id")
+        if group_id_raw:
+            try:
+                d["group_id"] = int(group_id_raw)
+            except ValueError:
+                d["group_id"] = group_id_raw.strip()
+        description = group_el.findtext("description")
+        if description:
+            d["description"] = description.strip()
+        peer_ip = group_el.findtext("peer-ip")
+        if peer_ip:
+            d["peer_ip"] = peer_ip.strip()
+        mode_el = group_el.find("mode")
+        if mode_el is not None and len(mode_el):
+            d["mode"] = mode_el[0].tag
+        priority_raw = group_el.findtext("election-option/device-priority")
+        if priority_raw:
+            try:
+                d["election_priority"] = int(priority_raw)
+            except ValueError:
+                d["election_priority"] = priority_raw.strip()
+
+    interface_el = ha_el.find("interface")
+    interfaces: dict = {}
+    if interface_el is not None:
+        for tag in _HA_INTERFACE_TAGS:
+            iface_el = interface_el.find(tag)
+            if iface_el is None:
+                continue
+            iface = _ha_iface_from_el(iface_el)
+            if iface:
+                interfaces[tag.replace("-", "_")] = iface
+    if interfaces:
+        d["interfaces"] = interfaces
+
+    return d
+
+
 def export_tacacs_server_profiles(vsys_root) -> list[dict]:
     """Export TACACS+ server profiles from vsys/server-profile/tacacs-plus.
 
