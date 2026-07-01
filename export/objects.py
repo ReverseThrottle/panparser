@@ -391,6 +391,27 @@ def export_ike_crypto_profiles(network_root: Element | None) -> list[dict]:
     return out
 
 
+def export_gp_app_crypto_profiles(network_root: Element | None) -> list[dict]:
+    """GlobalProtect app crypto profiles — sibling of ike-crypto-profiles under
+    ike/crypto-profiles. Same entry shape (name/encryption/authentication
+    member lists) but no hash/dh-group/lifetime fields."""
+    if network_root is None:
+        return []
+    container = network_root.find("ike/crypto-profiles/global-protect-app-crypto-profiles")
+    if container is None:
+        return []
+    out = []
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        d: dict = {
+            "name": name,
+            "encryption": get_members(entry, "encryption/member"),
+            "authentication": get_members(entry, "authentication/member"),
+        }
+        out.append(d)
+    return out
+
+
 def export_ipsec_crypto_profiles(network_root: Element | None) -> list[dict]:
     if network_root is None:
         return []
