@@ -754,6 +754,9 @@ def export_ethernet_interfaces(
             ips = [e.get("name", "") for e in layer3.findall("ip/entry") if e.get("name")]
             if ips:
                 layer3_d["ip"] = [{"name": ip} for ip in ips]
+            dhcp_client = _export_dhcp_client(layer3)
+            if dhcp_client is not None:
+                layer3_d["dhcp_client"] = dhcp_client
             parent["layer3"] = layer3_d
 
             for unit in layer3.findall("units/entry"):
@@ -780,6 +783,28 @@ def export_ethernet_interfaces(
         parents.append(parent)
 
     return parents, subinterfaces
+
+
+def _export_dhcp_client(layer3: Element) -> dict | None:
+    """Return the ``dhcp_client`` block for a ``<layer3>`` element, or None.
+
+    PAN-OS interfaces configured for DHCP addressing carry a
+    ``<dhcp-client>`` element under ``<layer3>`` with no ``<ip>`` entries.
+    Without reading it, the exported ``layer3`` dict comes out empty —
+    indistinguishable from an interface with no addressing configured at
+    all — and the interface silently loses its DHCP assignment downstream.
+    """
+    dhcp_el = layer3.find("dhcp-client")
+    if dhcp_el is None:
+        return None
+    dhcp: dict = {}
+    create_default_route = dhcp_el.findtext("create-default-route")
+    if create_default_route is not None:
+        dhcp["create_default_route"] = create_default_route == "yes"
+    default_route_metric = dhcp_el.findtext("default-route-metric")
+    if default_route_metric:
+        dhcp["default_route_metric"] = int(default_route_metric)
+    return dhcp
 
 
 def export_aggregate_interfaces(
@@ -813,6 +838,9 @@ def export_aggregate_interfaces(
             ips = [e.get("name", "") for e in layer3.findall("ip/entry") if e.get("name")]
             if ips:
                 layer3_d["ip"] = [{"name": ip} for ip in ips]
+            dhcp_client = _export_dhcp_client(layer3)
+            if dhcp_client is not None:
+                layer3_d["dhcp_client"] = dhcp_client
             parent["layer3"] = layer3_d
 
             for unit in layer3.findall("units/entry"):
