@@ -2142,13 +2142,51 @@ _DEVICE_SYSTEM_PATH = "devices/entry/deviceconfig/system"
 
 def _mgmt_from_el(sys_el) -> dict:
     d: dict = {}
-    permitted = [e.get("name", "") for e in sys_el.findall("permitted-ip/entry") if e.get("name")]
+
+    ip = sys_el.findtext("ip-address")
+    if ip:
+        d["ip_address"] = ip.strip()
+    netmask = sys_el.findtext("netmask")
+    if netmask:
+        d["netmask"] = netmask.strip()
+    gateway = sys_el.findtext("default-gateway")
+    if gateway:
+        d["default_gateway"] = gateway.strip()
+    if sys_el.find("type/static") is not None:
+        d["type"] = "static"
+    elif sys_el.find("type/dhcp-client") is not None:
+        d["type"] = "dhcp-client"
+
+    # permitted_ip stays a flat list of strings for backward compatibility with
+    # downstream consumers (e.g. scm-mcp's device-setup push, which forwards
+    # this list verbatim to the SCM management-interface API). Per-entry
+    # descriptions are exported separately so operationally useful context
+    # isn't silently dropped.
+    permitted = []
+    descriptions = {}
+    for e in sys_el.findall("permitted-ip/entry"):
+        name = e.get("name", "")
+        if not name:
+            continue
+        permitted.append(name)
+        desc = e.findtext("description")
+        if desc and desc.strip():
+            descriptions[name] = desc.strip()
     if permitted:
         d["permitted_ip"] = permitted
-    for flag in ("ssh", "https", "ping", "snmp", "telnet"):
-        val = sys_el.findtext(flag)
+    if descriptions:
+        d["permitted_ip_descriptions"] = descriptions
+
+    for flag, xml_flag in (
+        ("ssh", "disable-ssh"),
+        ("https", "disable-https"),
+        ("telnet", "disable-telnet"),
+        ("http", "disable-http"),
+    ):
+        val = sys_el.findtext(f"service/{xml_flag}")
         if val is not None:
-            d[flag] = val.strip().lower() != "no"
+            d[flag] = val.strip().lower() != "yes"
+
     for xml_field, key in (("ssh-port", "ssh_port"), ("https-port", "https_port")):
         raw = sys_el.findtext(xml_field)
         if raw:

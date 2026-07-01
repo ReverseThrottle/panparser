@@ -48,6 +48,29 @@ class TestExportManagementInterface:
         result = export_management_interface(_root("<hostname>fw01</hostname>"))
         assert result == {}
 
+    def test_ip_addressing_captured(self):
+        xml = """
+        <ip-address>192.168.10.213</ip-address>
+        <netmask>255.255.255.0</netmask>
+        <default-gateway>192.168.10.1</default-gateway>
+        """
+        result = export_management_interface(_root(xml))
+        assert result["ip_address"] == "192.168.10.213"
+        assert result["netmask"] == "255.255.255.0"
+        assert result["default_gateway"] == "192.168.10.1"
+
+    def test_type_static(self):
+        result = export_management_interface(_root("<type><static/></type>"))
+        assert result["type"] == "static"
+
+    def test_type_dhcp_client(self):
+        result = export_management_interface(_root("<type><dhcp-client/></type>"))
+        assert result["type"] == "dhcp-client"
+
+    def test_type_absent_when_no_type_element(self):
+        result = export_management_interface(_root("<hostname>fw01</hostname>"))
+        assert "type" not in result
+
     def test_permitted_ip_entries(self):
         xml = """
         <permitted-ip>
@@ -57,27 +80,66 @@ class TestExportManagementInterface:
         """
         result = export_management_interface(_root(xml))
         assert result["permitted_ip"] == ["10.250.98.0/24", "10.250.100.0/24"]
+        assert "permitted_ip_descriptions" not in result
 
     def test_empty_permitted_ip_element_excluded(self):
         result = export_management_interface(_root("<permitted-ip/>"))
         assert "permitted_ip" not in result
 
-    def test_protocol_flags_yes_maps_to_true(self):
-        xml = "<ssh>yes</ssh><https>yes</https><ping>yes</ping><snmp>yes</snmp>"
+    def test_permitted_ip_descriptions_captured_separately(self):
+        xml = """
+        <permitted-ip>
+          <entry name="137.229.21.128/26">
+            <description>RCS Elvey Office LAN</description>
+          </entry>
+          <entry name="137.229.0.0/24"/>
+        </permitted-ip>
+        """
         result = export_management_interface(_root(xml))
-        assert result["ssh"] is True
-        assert result["https"] is True
-        assert result["ping"] is True
-        assert result["snmp"] is True
+        assert result["permitted_ip"] == ["137.229.21.128/26", "137.229.0.0/24"]
+        assert result["permitted_ip_descriptions"] == {
+            "137.229.21.128/26": "RCS Elvey Office LAN"
+        }
 
-    def test_protocol_flag_no_maps_to_false(self):
-        result = export_management_interface(_root("<telnet>no</telnet>"))
+    def test_protocol_flags_disable_yes_maps_to_false(self):
+        xml = """
+        <service>
+          <disable-ssh>yes</disable-ssh>
+          <disable-https>yes</disable-https>
+          <disable-telnet>yes</disable-telnet>
+          <disable-http>yes</disable-http>
+        </service>
+        """
+        result = export_management_interface(_root(xml))
+        assert result["ssh"] is False
+        assert result["https"] is False
         assert result["telnet"] is False
+        assert result["http"] is False
+
+    def test_protocol_flag_disable_no_maps_to_true(self):
+        xml = "<service><disable-telnet>no</disable-telnet></service>"
+        result = export_management_interface(_root(xml))
+        assert result["telnet"] is True
 
     def test_absent_protocol_flag_not_included(self):
-        result = export_management_interface(_root("<ssh>yes</ssh>"))
+        xml = "<service><disable-ssh>yes</disable-ssh></service>"
+        result = export_management_interface(_root(xml))
+        assert "ssh" in result
         assert "telnet" not in result
         assert "https" not in result
+        assert "http" not in result
+
+    def test_top_level_protocol_tags_no_longer_read(self):
+        """Old (buggy) shape: ssh/https/telnet as direct children of <system>.
+
+        Real PAN-OS configs nest these under service/disable-*, so the
+        direct-child tags must no longer be interpreted as flags.
+        """
+        xml = "<ssh>yes</ssh><https>yes</https><telnet>no</telnet>"
+        result = export_management_interface(_root(xml))
+        assert "ssh" not in result
+        assert "https" not in result
+        assert "telnet" not in result
 
     def test_ssh_port_override(self):
         result = export_management_interface(_root("<ssh-port>2222</ssh-port>"))
@@ -93,23 +155,34 @@ class TestExportManagementInterface:
 
     def test_full_management_interface(self):
         xml = """
+        <ip-address>192.168.10.213</ip-address>
+        <netmask>255.255.255.0</netmask>
+        <default-gateway>192.168.10.1</default-gateway>
+        <type><static/></type>
+        <service>
+          <disable-telnet>yes</disable-telnet>
+          <disable-http>yes</disable-http>
+        </service>
         <permitted-ip>
-          <entry name="10.250.98.0/24"/>
+          <entry name="10.250.98.0/24">
+            <description>RCS Elvey Office LAN</description>
+          </entry>
           <entry name="10.250.100.0/24"/>
         </permitted-ip>
-        <ssh>yes</ssh>
-        <https>yes</https>
-        <ping>yes</ping>
-        <snmp>yes</snmp>
-        <telnet>no</telnet>
         """
         result = export_management_interface(_root(xml))
+        assert result["ip_address"] == "192.168.10.213"
+        assert result["netmask"] == "255.255.255.0"
+        assert result["default_gateway"] == "192.168.10.1"
+        assert result["type"] == "static"
         assert result["permitted_ip"] == ["10.250.98.0/24", "10.250.100.0/24"]
-        assert result["ssh"] is True
-        assert result["https"] is True
-        assert result["ping"] is True
-        assert result["snmp"] is True
+        assert result["permitted_ip_descriptions"] == {
+            "10.250.98.0/24": "RCS Elvey Office LAN"
+        }
         assert result["telnet"] is False
+        assert result["http"] is False
+        assert "ssh" not in result
+        assert "https" not in result
 
 
 # ── export_service_settings ────────────────────────────────────────────────────
