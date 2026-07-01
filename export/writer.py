@@ -28,6 +28,7 @@ from export.objects import (
     export_ike_gateways,
     export_ipsec_tunnels,
     export_interface_management_profiles,
+    export_monitor_profiles,
     export_loopback_interfaces,
     export_tunnel_interfaces,
     export_vlan_interfaces,
@@ -144,6 +145,7 @@ def build_export(
     ipsec_tunnels         = export_ipsec_tunnels(network_root)
     lldp_profiles           = export_lldp_profiles(network_root)
     interface_mgmt_profiles = export_interface_management_profiles(network_root)
+    monitor_profiles        = export_monitor_profiles(network_root)
     loopback_interfaces, loopback_notes = export_loopback_interfaces(network_root)
     tunnel_interfaces, tunnel_notes     = export_tunnel_interfaces(network_root)
     vlan_interfaces, vlan_notes         = export_vlan_interfaces(network_root)
@@ -342,6 +344,7 @@ def build_export(
             "ipsec_tunnels": ipsec_tunnels,
             "lldp_profiles": lldp_profiles,
             "interface_management_profiles": interface_mgmt_profiles,
+            "monitor_profiles": monitor_profiles,
             "interfaces": {
                 "loopback": loopback_interfaces,
                 "tunnel": tunnel_interfaces,

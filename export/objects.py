@@ -572,6 +572,33 @@ def export_interface_management_profiles(network_root: Element | None) -> list[d
     return out
 
 
+def export_monitor_profiles(network_root: Element | None) -> list[dict]:
+    """Locally-defined monitor profiles at network/profiles/monitor-profile.
+
+    Used for IKE gateway / static-route path monitoring.
+    """
+    if network_root is None:
+        return []
+    container = network_root.find("profiles/monitor-profile")
+    if container is None:
+        return []
+    out = []
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        p: dict = {"name": name}
+        interval = entry.findtext("interval")
+        if interval:
+            p["interval"] = int(interval)
+        threshold = entry.findtext("threshold")
+        if threshold:
+            p["threshold"] = int(threshold)
+        action = entry.findtext("action")
+        if action:
+            p["action"] = action
+        out.append(p)
+    return out
+
+
 def export_loopback_interfaces(network_root: Element | None) -> tuple[list[dict], list[str]]:
     """Loopback interfaces: numbered units at interface/loopback/units/entry.
 
