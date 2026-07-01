@@ -245,13 +245,15 @@ class TestExportServiceRoutes:
         assert result == []
 
     def test_single_route_interface_only(self):
+        # Real PAN-OS schema: route/service/entry/source/interface (not
+        # source-address/interface — see issue #23).
         xml = """
         <route>
           <service>
             <entry name="dns">
-              <source-address>
+              <source>
                 <interface>management</interface>
-              </source-address>
+              </source>
             </entry>
           </service>
         </route>
@@ -263,14 +265,16 @@ class TestExportServiceRoutes:
         assert "source_ip" not in result[0]
 
     def test_route_with_source_ip(self):
+        # Real PAN-OS schema uses source/address, not
+        # source-address/ip-address (see UA-HAARP-Cofnig_20260605.xml).
         xml = """
         <route>
           <service>
             <entry name="ntp">
-              <source-address>
+              <source>
                 <interface>management</interface>
-                <ip-address>10.250.100.5</ip-address>
-              </source-address>
+                <address>10.250.100.5</address>
+              </source>
             </entry>
           </service>
         </route>
@@ -283,13 +287,13 @@ class TestExportServiceRoutes:
         <route>
           <service>
             <entry name="dns">
-              <source-address><interface>management</interface></source-address>
+              <source><interface>management</interface></source>
             </entry>
             <entry name="ntp">
-              <source-address><interface>management</interface></source-address>
+              <source><interface>management</interface></source>
             </entry>
             <entry name="syslog">
-              <source-address><interface>ethernet1/1</interface></source-address>
+              <source><interface>ethernet1/1</interface></source>
             </entry>
           </service>
         </route>
@@ -318,10 +322,10 @@ class TestExportServiceRoutes:
         <route>
           <service>
             <entry name="">
-              <source-address><interface>management</interface></source-address>
+              <source><interface>management</interface></source>
             </entry>
             <entry name="ntp">
-              <source-address><interface>management</interface></source-address>
+              <source><interface>management</interface></source>
             </entry>
           </service>
         </route>
@@ -329,6 +333,98 @@ class TestExportServiceRoutes:
         result = export_service_routes(_root(xml))
         assert len(result) == 1
         assert result[0]["service"] == "ntp"
+
+    def test_returns_empty_list_when_no_destination_entries(self):
+        result = export_service_routes(_root("<route><destination/></route>"))
+        assert result == []
+
+    def test_single_destination_route(self):
+        # Mirrors UA-HAARP-Cofnig_20260605.xml's route/destination/entry
+        # shape, which is a completely separate construct from
+        # route/service and was previously never read at all.
+        xml = """
+        <route>
+          <destination>
+            <entry name="10.36.0.25">
+              <source>
+                <interface>ethernet1/7.360</interface>
+                <address>10.36.0.1/24</address>
+              </source>
+            </entry>
+          </destination>
+        </route>
+        """
+        result = export_service_routes(_root(xml))
+        assert len(result) == 1
+        assert result[0]["destination"] == "10.36.0.25"
+        assert result[0]["interface"] == "ethernet1/7.360"
+        assert result[0]["source_ip"] == "10.36.0.1/24"
+
+    def test_destination_entry_with_no_interface_excluded_gracefully(self):
+        xml = """
+        <route>
+          <destination>
+            <entry name="10.36.0.25"/>
+          </destination>
+        </route>
+        """
+        result = export_service_routes(_root(xml))
+        assert len(result) == 1
+        assert result[0] == {"destination": "10.36.0.25"}
+
+    def test_destination_entry_with_blank_name_skipped(self):
+        xml = """
+        <route>
+          <destination>
+            <entry name="">
+              <source><interface>ethernet1/1</interface></source>
+            </entry>
+            <entry name="10.36.0.25">
+              <source><interface>ethernet1/7.360</interface></source>
+            </entry>
+          </destination>
+        </route>
+        """
+        result = export_service_routes(_root(xml))
+        assert len(result) == 1
+        assert result[0]["destination"] == "10.36.0.25"
+
+    def test_service_and_destination_routes_both_present(self):
+        # Full repro from issue #23: one route/service entry ("ntp") and
+        # one route/destination entry ("10.36.0.25"), both with
+        # source/interface and source/address populated.
+        xml = """
+        <route>
+          <service>
+            <entry name="ntp">
+              <source>
+                <address>137.229.36.1/24</address>
+                <interface>ethernet1/7.36</interface>
+              </source>
+            </entry>
+          </service>
+          <destination>
+            <entry name="10.36.0.25">
+              <source>
+                <interface>ethernet1/7.360</interface>
+                <address>10.36.0.1/24</address>
+              </source>
+            </entry>
+          </destination>
+        </route>
+        """
+        result = export_service_routes(_root(xml))
+        assert len(result) == 2
+
+        service_route = next(r for r in result if "service" in r)
+        assert service_route["service"] == "ntp"
+        assert service_route["interface"] == "ethernet1/7.36"
+        assert service_route["source_ip"] == "137.229.36.1/24"
+
+        destination_route = next(r for r in result if "destination" in r)
+        assert destination_route["destination"] == "10.36.0.25"
+        assert destination_route["interface"] == "ethernet1/7.360"
+        assert destination_route["source_ip"] == "10.36.0.1/24"
 
     def test_login_banner_is_stripped(self):
         xml = "<login-banner>  Authorized access only  </login-banner>"

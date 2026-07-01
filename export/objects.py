@@ -2183,17 +2183,26 @@ def _svc_from_el(sys_el) -> dict:
 
 
 def _routes_from_el(sys_el) -> list[dict]:
-    route_container = sys_el.find("route/service")
-    if route_container is None:
-        return []
     out = []
-    for entry in route_container.findall("entry"):
+    for entry in sys_el.findall("route/service/entry"):
         name = entry.get("name", "")
         if not name:
             continue
-        iface = entry.findtext("source-address/interface") or ""
-        src_ip = entry.findtext("source-address/ip-address") or ""
+        iface = entry.findtext("source/interface") or ""
+        src_ip = entry.findtext("source/address") or ""
         d: dict = {"service": name}
+        if iface:
+            d["interface"] = iface
+        if src_ip:
+            d["source_ip"] = src_ip
+        out.append(d)
+    for entry in sys_el.findall("route/destination/entry"):
+        name = entry.get("name", "")
+        if not name:
+            continue
+        iface = entry.findtext("source/interface") or ""
+        src_ip = entry.findtext("source/address") or ""
+        d = {"destination": name}
         if iface:
             d["interface"] = iface
         if src_ip:
