@@ -59,6 +59,7 @@ from export.objects import (
     export_saml_server_profiles,
     export_tacacs_server_profiles,
     export_device_setup,
+    export_botnet_report,
 )
 
 
@@ -179,6 +180,9 @@ def build_export(
     # Device Setup — device-scoped, requires serial at push time
     mgmt_interface, service_settings, service_routes = export_device_setup(root)
 
+    # Botnet/C2 traffic report config — reporting/analytics, not pushable to SCM
+    botnet_report = export_botnet_report(shared_root)
+
     # Identity server profiles with encrypted secrets — flag placeholder values
     _secret_profiles = (
         [(radius_server_profiles, "objects/radius_server_profiles", "RADIUS")]
@@ -248,6 +252,17 @@ def build_export(
             "message": (
                 f"{len(lldp_profiles)} LLDP profile(s) exported and will be pushed to SCM "
                 "via direct REST API during migration."
+            ),
+        })
+    if botnet_report:
+        warnings.append({
+            "severity": "warn",
+            "object_path": "shared/botnet_report",
+            "message": (
+                "Botnet/C2 traffic report configuration (Monitor > PDF Reports > Botnet) "
+                "exported for reference only. SCM/Strata Logging Service has no direct "
+                "equivalent object for these thresholds and report settings — recreate "
+                "the equivalent alerting/reporting manually in SCM after migration."
             ),
         })
 
@@ -407,6 +422,9 @@ def build_export(
             "service_routes": service_routes,
         }
 
+    if botnet_report:
+        data["shared"] = {"botnet_report": botnet_report}
+
     # Apply trailing-underscore normalization across all names and references
     if rename_map:
         data = _apply_renames(data, rename_map)
@@ -436,6 +454,7 @@ def write_export(data: dict, output_path: str) -> None:
     vrs  = data.get("network", {}).get("virtual_routers", [])
     warns = data.get("migration_warnings", [])
     dev_setup = data.get("device_setup", {})
+    shared = data.get("shared", {})
 
     print(
         f"Exported to {output_path}  "
@@ -526,6 +545,11 @@ def write_export(data: dict, output_path: str) -> None:
     if ds_parts:
         print(
             f"  device  : {' | '.join(ds_parts)}  (device-scoped — needs device_serial to push)",
+            file=sys.stderr,
+        )
+    if shared.get("botnet_report"):
+        print(
+            "  shared  : botnet_report present  (reference only — no SCM equivalent object)",
             file=sys.stderr,
         )
     if warns:
