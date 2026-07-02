@@ -966,24 +966,38 @@ def _export_dhcp_client(layer3: Element) -> dict | None:
 
 def export_aggregate_interfaces(
     network_root: Element | None,
-) -> tuple[list[dict], list[dict]]:
-    """Return (parent_ae_interfaces, layer3_subinterfaces).
+) -> tuple[list[dict], list[dict], list[str]]:
+    """Return (parent_ae_interfaces, layer3_subinterfaces, notes).
 
     Parent aggregate interfaces (ae1, ae2…) are pushed as $ae-N variables.
     Subinterfaces (ae1.1, ae1.2…) carry IP/VLAN config and are pushed separately.
+
+    An AE interface may also be configured as virtual-wire, ha, or tap mode
+    instead of layer2/layer3, exactly like a physical ethernet interface. Unlike
+    the ethernet interface SCM SDK model — which has a dedicated ``tap`` field —
+    the aggregate interface SDK model (``AggregateInterfaceBaseModel``) only
+    supports ``layer2``/``layer3``; it has no ``tap`` field at all. So for AE
+    interfaces, virtual-wire, ha, *and* tap all have no SCM SDK equivalent and
+    are tagged in the export for visibility, each emitting a migration note so
+    the caller can surface a warning instead of migrating the interface
+    silently as blank.
     """
     if network_root is None:
-        return [], []
+        return [], [], []
     container = network_root.find("interface/aggregate-ethernet")
     if container is None:
-        return [], []
+        return [], [], []
     parents: list[dict] = []
     subinterfaces: list[dict] = []
+    notes: list[str] = []
 
     for entry in container.findall("entry"):
         name = entry.get("name", "")
         layer3 = entry.find("layer3")
         layer2 = entry.find("layer2")
+        virtual_wire = entry.find("virtual-wire")
+        ha = entry.find("ha")
+        tap = entry.find("tap")
 
         parent: dict = {"name": name}
         comment = entry.findtext("comment")
@@ -1020,10 +1034,39 @@ def export_aggregate_interfaces(
                 subinterfaces.append(sub)
         elif layer2 is not None:
             parent["layer2"] = {}
+        elif tap is not None:
+            parent["tap"] = {}
+            notes.append(
+                f"Aggregate interface '{name}' is configured in tap mode. "
+                "The SCM SDK's aggregate interface model has no tap equivalent "
+                "(only layer2/layer3 are supported — unlike the ethernet interface "
+                "model, which has a dedicated tap field) — tagged as 'tap' in the "
+                "export, but this cannot be pushed as-is and must be configured "
+                "manually in SCM."
+            )
+        elif virtual_wire is not None:
+            parent["virtual_wire"] = {}
+            notes.append(
+                f"Aggregate interface '{name}' is configured in virtual-wire mode. "
+                "The SCM SDK's aggregate interface model has no virtual-wire "
+                "equivalent (only layer2/layer3 are supported) — tagged as "
+                "'virtual_wire' in the export, but this cannot be pushed as-is and "
+                "must be configured manually in SCM, including its vwire zone "
+                "binding."
+            )
+        elif ha is not None:
+            parent["ha"] = {}
+            notes.append(
+                f"Aggregate interface '{name}' is configured in HA mode. "
+                "The SCM SDK's aggregate interface model has no HA equivalent "
+                "(only layer2/layer3 are supported) — tagged as 'ha' in the "
+                "export, but this cannot be pushed as-is and must be configured "
+                "manually in SCM."
+            )
 
         parents.append(parent)
 
-    return parents, subinterfaces
+    return parents, subinterfaces, notes
 
 
 def export_decryption_rules(vsys_root) -> list[dict]:
@@ -2415,6 +2458,126 @@ def export_saml_server_profiles(vsys_root) -> list[dict]:
         want_signed_raw = entry.findtext("want-auth-requests-signed")
         if want_signed_raw is not None:
             d["want_auth_requests_signed"] = want_signed_raw.lower() == "yes"
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
+def export_gp_gateways(vsys_root) -> list[dict]:
+    """Export GlobalProtect gateways from vsys/global-protect/global-protect-gateway.
+
+    v1 scope mirrors what the TUI already surfaces (parsers/globalprotect.py::
+    render_gp_gateways()), vetted against real data in 440-config.xml and
+    uas-config.xml: name, ssl_tls_service_profile, tunnel_mode, remote_user_tunnel,
+    plus the actual client-auth entries (name/os/authentication-profile/etc.) since
+    their structure is flat and consistent across both real configs.
+
+    Known limitations — intentionally NOT exported in this pass (full HIP-profile /
+    DHCP-pool / satellite-config fidelity is out of scope for v1):
+      - roles (login lifetime / inactivity logout / notification messages)
+      - remote-user-tunnel-configs (per-tunnel auth-override, source-address/user,
+        ip-pool, os restrictions)
+      - gp-gw-dhcp (DHCP pool settings for the tunnel interface)
+      - log-setting / log-success (logging configuration)
+    These are real, present in the source data, but deferred until a follow-up
+    pass — they are not silently dropped, just out of scope for v1.
+    """
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("global-protect/global-protect-gateway")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        d: dict = {"name": name}
+
+        ssl_profile = entry.findtext("ssl-tls-service-profile")
+        if ssl_profile:
+            d["ssl_tls_service_profile"] = ssl_profile
+
+        tunnel_mode = entry.findtext("tunnel-mode")
+        d["tunnel_mode"] = (tunnel_mode or "no").lower() == "yes"
+
+        remote_user_tunnel = entry.findtext("remote-user-tunnel")
+        if remote_user_tunnel:
+            d["remote_user_tunnel"] = remote_user_tunnel
+
+        client_auth_entries = []
+        for ca_entry in entry.findall("client-auth/entry"):
+            ca_name = ca_entry.get("name", "")
+            ca: dict = {"name": ca_name}
+            os_val = ca_entry.findtext("os")
+            if os_val:
+                ca["os"] = os_val
+            auth_profile = ca_entry.findtext("authentication-profile")
+            if auth_profile:
+                ca["authentication_profile"] = auth_profile
+            auth_message = ca_entry.findtext("authentication-message")
+            if auth_message:
+                ca["authentication_message"] = auth_message
+            cred_required = ca_entry.findtext("user-credential-or-client-cert-required")
+            if cred_required is not None:
+                ca["user_credential_or_client_cert_required"] = cred_required.lower() == "yes"
+            auto_passcode = ca_entry.findtext("auto-retrieve-passcode")
+            if auto_passcode is not None:
+                ca["auto_retrieve_passcode"] = auto_passcode.lower() == "yes"
+            username_label = ca_entry.findtext("username-label")
+            if username_label:
+                ca["username_label"] = username_label
+            password_label = ca_entry.findtext("password-label")
+            if password_label:
+                ca["password_label"] = password_label
+            client_auth_entries.append(ca)
+
+        if client_auth_entries:
+            d["client_auth"] = client_auth_entries
+        d["client_auth_count"] = len(client_auth_entries)
+
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
+def export_ssl_profiles(shared_root) -> list[dict]:
+    """Export SSL/TLS Service Profiles from shared/ssl-tls-service-profile.
+
+    Mirrors what the TUI already surfaces (parsers/ssl_profiles.py::render_ssl_profiles()):
+    name, certificate, min_version, and max_version. The certificate is a reference by
+    name only — the caller is expected to surface a migration_warning since the
+    referenced certificate object must exist in SCM before the push will succeed
+    (same pattern as export_saml_server_profiles()).
+
+    Known limitation — cipher suite flags intentionally out of scope: PAN-OS also
+    carries per-profile cipher suite restriction flags under protocol-settings
+    (keyxchg-algo-*, enc-algo-*, auth-algo-*). Checked the scm-mcp SDK
+    (scm.models.security.decryption_profiles.SSLProtocolSettings) — it supports
+    exactly this set of boolean flags, but only for Decryption Profiles. As of this
+    SDK version there is no SSL/TLS Service Profile model at all, so there is no
+    supported field to push these flags into for this object type. They are left out
+    here as a documented limitation rather than silently dropped; recreate cipher
+    suite restrictions manually in SCM after migration if they matter for a profile.
+    """
+    out = []
+    if shared_root is None:
+        return out
+    container = shared_root.find("ssl-tls-service-profile")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        if not name:
+            continue
+        d: dict = {"name": name}
+        certificate = entry.findtext("certificate") or ""
+        if certificate:
+            d["certificate"] = certificate
+        min_ver = entry.findtext("protocol-settings/min-version") or ""
+        if min_ver:
+            d["min_version"] = min_ver
+        max_ver = entry.findtext("protocol-settings/max-version") or ""
+        if max_ver:
+            d["max_version"] = max_ver
         out.append(d)
     out.sort(key=lambda x: x["name"].lower())
     return out
