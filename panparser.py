@@ -29,6 +29,7 @@ from parsers.certificates import render_certificates
 from parsers.auth_profiles import render_auth_profiles
 from parsers.ssl_profiles import render_ssl_profiles
 from parsers.zone_protection import render_zone_protection
+from parsers.monitor_profiles import render_monitor_profiles
 from parsers.globalprotect import render_gp_gateways, render_gp_portals
 from parsers.decryption import render_decryption_rules
 from parsers.pbf import render_pbf_rules
@@ -63,6 +64,7 @@ SECTIONS = [
     "auth-profiles",
     "ssl-profiles",
     "zone-protection",
+    "monitor-profiles",
     "gp-gateways",
     "gp-portals",
     "decryption",
@@ -260,6 +262,8 @@ def main() -> None:
                                    render_ssl_profiles(shared_root, console, grep)),
         "zone-protection": lambda: (section_header(console, "Zone Protection Profiles"),
                                     render_zone_protection(network_root, console, grep)),
+        "monitor-profiles": lambda: (section_header(console, "Monitor Profiles"),
+                                     render_monitor_profiles(network_root, console, grep)),
         "gp-gateways":    lambda: (section_header(console, "GlobalProtect Gateways"),
                                    render_gp_gateways(vsys_root, console, grep)),
         "gp-portals":     lambda: (section_header(console, "GlobalProtect Portals"),
