@@ -391,6 +391,27 @@ def export_ike_crypto_profiles(network_root: Element | None) -> list[dict]:
     return out
 
 
+def export_gp_app_crypto_profiles(network_root: Element | None) -> list[dict]:
+    """GlobalProtect app crypto profiles — sibling of ike-crypto-profiles under
+    ike/crypto-profiles. Same entry shape (name/encryption/authentication
+    member lists) but no hash/dh-group/lifetime fields."""
+    if network_root is None:
+        return []
+    container = network_root.find("ike/crypto-profiles/global-protect-app-crypto-profiles")
+    if container is None:
+        return []
+    out = []
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        d: dict = {
+            "name": name,
+            "encryption": get_members(entry, "encryption/member"),
+            "authentication": get_members(entry, "authentication/member"),
+        }
+        out.append(d)
+    return out
+
+
 def export_ipsec_crypto_profiles(network_root: Element | None) -> list[dict]:
     if network_root is None:
         return []
@@ -568,6 +589,33 @@ def export_interface_management_profiles(network_root: Element | None) -> list[d
         permitted = [e.get("name", "") for e in entry.findall("permitted-ip/entry") if e.get("name")]
         if permitted:
             p["permitted_ip"] = permitted
+        out.append(p)
+    return out
+
+
+def export_monitor_profiles(network_root: Element | None) -> list[dict]:
+    """Locally-defined monitor profiles at network/profiles/monitor-profile.
+
+    Used for IKE gateway / static-route path monitoring.
+    """
+    if network_root is None:
+        return []
+    container = network_root.find("profiles/monitor-profile")
+    if container is None:
+        return []
+    out = []
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        p: dict = {"name": name}
+        interval = entry.findtext("interval")
+        if interval:
+            p["interval"] = int(interval)
+        threshold = entry.findtext("threshold")
+        if threshold:
+            p["threshold"] = int(threshold)
+        action = entry.findtext("action")
+        if action:
+            p["action"] = action
         out.append(p)
     return out
 
@@ -754,6 +802,9 @@ def export_ethernet_interfaces(
             ips = [e.get("name", "") for e in layer3.findall("ip/entry") if e.get("name")]
             if ips:
                 layer3_d["ip"] = [{"name": ip} for ip in ips]
+            dhcp_client = _export_dhcp_client(layer3)
+            if dhcp_client is not None:
+                layer3_d["dhcp_client"] = dhcp_client
             parent["layer3"] = layer3_d
 
             for unit in layer3.findall("units/entry"):
@@ -780,6 +831,28 @@ def export_ethernet_interfaces(
         parents.append(parent)
 
     return parents, subinterfaces
+
+
+def _export_dhcp_client(layer3: Element) -> dict | None:
+    """Return the ``dhcp_client`` block for a ``<layer3>`` element, or None.
+
+    PAN-OS interfaces configured for DHCP addressing carry a
+    ``<dhcp-client>`` element under ``<layer3>`` with no ``<ip>`` entries.
+    Without reading it, the exported ``layer3`` dict comes out empty —
+    indistinguishable from an interface with no addressing configured at
+    all — and the interface silently loses its DHCP assignment downstream.
+    """
+    dhcp_el = layer3.find("dhcp-client")
+    if dhcp_el is None:
+        return None
+    dhcp: dict = {}
+    create_default_route = dhcp_el.findtext("create-default-route")
+    if create_default_route is not None:
+        dhcp["create_default_route"] = create_default_route == "yes"
+    default_route_metric = dhcp_el.findtext("default-route-metric")
+    if default_route_metric:
+        dhcp["default_route_metric"] = int(default_route_metric)
+    return dhcp
 
 
 def export_aggregate_interfaces(
@@ -813,6 +886,9 @@ def export_aggregate_interfaces(
             ips = [e.get("name", "") for e in layer3.findall("ip/entry") if e.get("name")]
             if ips:
                 layer3_d["ip"] = [{"name": ip} for ip in ips]
+            dhcp_client = _export_dhcp_client(layer3)
+            if dhcp_client is not None:
+                layer3_d["dhcp_client"] = dhcp_client
             parent["layer3"] = layer3_d
 
             for unit in layer3.findall("units/entry"):
@@ -1332,6 +1408,76 @@ def export_lldp_profiles(network_root) -> list[dict]:
                 d["option_tlvs"] = tlvs
         out.append(d)
     out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
+def export_dhcp_servers(network_root) -> list[dict]:
+    """Export DHCP server configuration from network/dhcp/interface.
+
+    Covers an interface acting as a DHCP *server* (leases, IP pool,
+    reservations, DNS/gateway options). Separate from DHCP *client*
+    configuration on layer3 interfaces (network/interface/.../dhcp-client).
+    """
+    out = []
+    if network_root is None:
+        return out
+    container = network_root.find("dhcp/interface")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        if not name:
+            continue
+        server = entry.find("server")
+        if server is None:
+            continue
+
+        d: dict = {"interface": name}
+
+        mode = server.findtext("mode")
+        if mode:
+            d["mode"] = mode
+
+        probe_ip = server.findtext("probe-ip")
+        if probe_ip is not None:
+            d["probe_ip"] = probe_ip.lower() == "yes"
+
+        option = server.find("option")
+        if option is not None:
+            gateway = option.findtext("gateway")
+            if gateway:
+                d["gateway"] = gateway
+            subnet_mask = option.findtext("subnet-mask")
+            if subnet_mask:
+                d["subnet_mask"] = subnet_mask
+            dns_primary = option.findtext("dns/primary")
+            if dns_primary:
+                d["dns_primary"] = dns_primary
+            dns_secondary = option.findtext("dns/secondary")
+            if dns_secondary:
+                d["dns_secondary"] = dns_secondary
+            lease_timeout = option.findtext("lease/timeout")
+            if lease_timeout is not None:
+                try:
+                    d["lease_timeout"] = int(lease_timeout)
+                except ValueError:
+                    pass
+
+        ip_pool = [m.text for m in server.findall("ip-pool/member") if m.text]
+        if ip_pool:
+            d["ip_pool"] = ip_pool
+
+        reserved = []
+        for r in server.findall("reserved/entry"):
+            ip = r.get("name", "")
+            if not ip:
+                continue
+            reserved.append({"ip": ip, "mac": r.findtext("mac") or ""})
+        if reserved:
+            d["reserved"] = reserved
+
+        out.append(d)
+    out.sort(key=lambda x: x["interface"].lower())
     return out
 
 
@@ -2142,13 +2288,51 @@ _DEVICE_SYSTEM_PATH = "devices/entry/deviceconfig/system"
 
 def _mgmt_from_el(sys_el) -> dict:
     d: dict = {}
-    permitted = [e.get("name", "") for e in sys_el.findall("permitted-ip/entry") if e.get("name")]
+
+    ip = sys_el.findtext("ip-address")
+    if ip:
+        d["ip_address"] = ip.strip()
+    netmask = sys_el.findtext("netmask")
+    if netmask:
+        d["netmask"] = netmask.strip()
+    gateway = sys_el.findtext("default-gateway")
+    if gateway:
+        d["default_gateway"] = gateway.strip()
+    if sys_el.find("type/static") is not None:
+        d["type"] = "static"
+    elif sys_el.find("type/dhcp-client") is not None:
+        d["type"] = "dhcp-client"
+
+    # permitted_ip stays a flat list of strings for backward compatibility with
+    # downstream consumers (e.g. scm-mcp's device-setup push, which forwards
+    # this list verbatim to the SCM management-interface API). Per-entry
+    # descriptions are exported separately so operationally useful context
+    # isn't silently dropped.
+    permitted = []
+    descriptions = {}
+    for e in sys_el.findall("permitted-ip/entry"):
+        name = e.get("name", "")
+        if not name:
+            continue
+        permitted.append(name)
+        desc = e.findtext("description")
+        if desc and desc.strip():
+            descriptions[name] = desc.strip()
     if permitted:
         d["permitted_ip"] = permitted
-    for flag in ("ssh", "https", "ping", "snmp", "telnet"):
-        val = sys_el.findtext(flag)
+    if descriptions:
+        d["permitted_ip_descriptions"] = descriptions
+
+    for flag, xml_flag in (
+        ("ssh", "disable-ssh"),
+        ("https", "disable-https"),
+        ("telnet", "disable-telnet"),
+        ("http", "disable-http"),
+    ):
+        val = sys_el.findtext(f"service/{xml_flag}")
         if val is not None:
-            d[flag] = val.strip().lower() != "no"
+            d[flag] = val.strip().lower() != "yes"
+
     for xml_field, key in (("ssh-port", "ssh_port"), ("https-port", "https_port")):
         raw = sys_el.findtext(xml_field)
         if raw:
@@ -2183,17 +2367,26 @@ def _svc_from_el(sys_el) -> dict:
 
 
 def _routes_from_el(sys_el) -> list[dict]:
-    route_container = sys_el.find("route/service")
-    if route_container is None:
-        return []
     out = []
-    for entry in route_container.findall("entry"):
+    for entry in sys_el.findall("route/service/entry"):
         name = entry.get("name", "")
         if not name:
             continue
-        iface = entry.findtext("source-address/interface") or ""
-        src_ip = entry.findtext("source-address/ip-address") or ""
+        iface = entry.findtext("source/interface") or ""
+        src_ip = entry.findtext("source/address") or ""
         d: dict = {"service": name}
+        if iface:
+            d["interface"] = iface
+        if src_ip:
+            d["source_ip"] = src_ip
+        out.append(d)
+    for entry in sys_el.findall("route/destination/entry"):
+        name = entry.get("name", "")
+        if not name:
+            continue
+        iface = entry.findtext("source/interface") or ""
+        src_ip = entry.findtext("source/address") or ""
+        d = {"destination": name}
         if iface:
             d["interface"] = iface
         if src_ip:
@@ -2361,3 +2554,130 @@ def export_tacacs_server_profiles(vsys_root) -> list[dict]:
         out.append(d)
     out.sort(key=lambda x: x["name"].lower())
     return out
+
+
+def _threshold_entry(el) -> dict:
+    """Read an <enabled>/<threshold> pair from a botnet http-detection element."""
+    d: dict = {}
+    enabled_raw = el.findtext("enabled")
+    if enabled_raw is not None:
+        d["enabled"] = enabled_raw.strip().lower() == "yes"
+    threshold_raw = el.findtext("threshold")
+    if threshold_raw:
+        try:
+            d["threshold"] = int(threshold_raw)
+        except ValueError:
+            pass
+    return d
+
+
+def _unknown_proto_entry(el) -> dict:
+    """Read destinations/sessions-per-hour and session-length from a botnet
+    unknown-tcp/unknown-udp element."""
+    d: dict = {}
+    for xml_field, key in (
+        ("destinations-per-hour", "destinations_per_hour"),
+        ("sessions-per-hour", "sessions_per_hour"),
+    ):
+        raw = el.findtext(xml_field)
+        if raw:
+            try:
+                d[key] = int(raw)
+            except ValueError:
+                pass
+    length_el = el.find("session-length")
+    if length_el is not None:
+        length: dict = {}
+        for xml_field, key in (
+            ("maximum-bytes", "maximum_bytes"),
+            ("minimum-bytes", "minimum_bytes"),
+        ):
+            raw = length_el.findtext(xml_field)
+            if raw:
+                try:
+                    length[key] = int(raw)
+                except ValueError:
+                    pass
+        if length:
+            d["session_length"] = length
+    return d
+
+
+def export_botnet_report(shared_root) -> dict:
+    """Export the Botnet/C2 traffic report config from shared/botnet.
+
+    Corresponds to Monitor > PDF Reports > Botnet in PAN-OS. SCM/Strata Logging
+    Service has no direct equivalent object for this — exported for reference
+    only, not as a pushable object (see the migration_warning emitted by
+    build_export(), which follows the same pattern as dos_protection profiles).
+    """
+    if shared_root is None:
+        return {}
+    botnet_el = shared_root.find("botnet")
+    if botnet_el is None:
+        return {}
+
+    d: dict = {}
+
+    config_el = botnet_el.find("configuration")
+    if config_el is not None:
+        config: dict = {}
+
+        http_el = config_el.find("http")
+        if http_el is not None:
+            http: dict = {}
+            for xml_field, key in (
+                ("dynamic-dns", "dynamic_dns"),
+                ("malware-sites", "malware_sites"),
+                ("recent-domains", "recent_domains"),
+                ("ip-domains", "ip_domains"),
+                ("executables-from-unknown-sites", "executables_from_unknown_sites"),
+            ):
+                el = http_el.find(xml_field)
+                if el is None:
+                    continue
+                entry = _threshold_entry(el)
+                if entry:
+                    http[key] = entry
+            if http:
+                config["http"] = http
+
+        irc_raw = config_el.findtext("other-applications/irc")
+        if irc_raw is not None:
+            config["other_applications"] = {"irc": irc_raw.strip().lower() == "yes"}
+
+        unknown_el = config_el.find("unknown-applications")
+        if unknown_el is not None:
+            unknown: dict = {}
+            for xml_field, key in (
+                ("unknown-tcp", "unknown_tcp"),
+                ("unknown-udp", "unknown_udp"),
+            ):
+                proto_el = unknown_el.find(xml_field)
+                if proto_el is None:
+                    continue
+                proto = _unknown_proto_entry(proto_el)
+                if proto:
+                    unknown[key] = proto
+            if unknown:
+                config["unknown_applications"] = unknown
+
+        if config:
+            d["configuration"] = config
+
+    report_el = botnet_el.find("report")
+    if report_el is not None:
+        report: dict = {}
+        topn_raw = report_el.findtext("topn")
+        if topn_raw:
+            try:
+                report["topn"] = int(topn_raw)
+            except ValueError:
+                pass
+        scheduled_raw = report_el.findtext("scheduled")
+        if scheduled_raw is not None:
+            report["scheduled"] = scheduled_raw.strip().lower() == "yes"
+        if report:
+            d["report"] = report
+
+    return d

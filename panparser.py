@@ -18,6 +18,7 @@ from parsers.security import render_security_rules
 from parsers.nat import render_nat_rules
 from parsers.zones import render_zones
 from parsers.interfaces import render_interfaces
+from parsers.dhcp import render_dhcp_servers
 from parsers.routing import render_routing
 from parsers.tags import render_tags
 from parsers.profiles import render_profiles
@@ -29,6 +30,7 @@ from parsers.certificates import render_certificates
 from parsers.auth_profiles import render_auth_profiles
 from parsers.ssl_profiles import render_ssl_profiles
 from parsers.zone_protection import render_zone_protection
+from parsers.monitor_profiles import render_monitor_profiles
 from parsers.globalprotect import render_gp_gateways, render_gp_portals
 from parsers.decryption import render_decryption_rules
 from parsers.pbf import render_pbf_rules
@@ -53,6 +55,7 @@ SECTIONS = [
     "dos-rules",
     "zones",
     "interfaces",
+    "dhcp-servers",
     "routing",
     "tags",
     "profiles",
@@ -63,6 +66,7 @@ SECTIONS = [
     "auth-profiles",
     "ssl-profiles",
     "zone-protection",
+    "monitor-profiles",
     "gp-gateways",
     "gp-portals",
     "decryption",
@@ -240,6 +244,8 @@ def main() -> None:
                                    render_zones(network_root, console, grep)),
         "interfaces":     lambda: (section_header(console, "Interfaces"),
                                    render_interfaces(network_root, console, grep)),
+        "dhcp-servers":   lambda: (section_header(console, "DHCP Servers"),
+                                   render_dhcp_servers(network_root, console, grep)),
         "routing":        lambda: (section_header(console, "Static Routes"),
                                    render_routing(network_root, console, grep)),
         "tags":           lambda: (section_header(console, "Tags"),
@@ -260,6 +266,8 @@ def main() -> None:
                                    render_ssl_profiles(shared_root, console, grep)),
         "zone-protection": lambda: (section_header(console, "Zone Protection Profiles"),
                                     render_zone_protection(network_root, console, grep)),
+        "monitor-profiles": lambda: (section_header(console, "Monitor Profiles"),
+                                     render_monitor_profiles(network_root, console, grep)),
         "gp-gateways":    lambda: (section_header(console, "GlobalProtect Gateways"),
                                    render_gp_gateways(vsys_root, console, grep)),
         "gp-portals":     lambda: (section_header(console, "GlobalProtect Portals"),
