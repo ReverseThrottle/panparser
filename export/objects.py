@@ -2284,3 +2284,73 @@ def export_tacacs_server_profiles(vsys_root) -> list[dict]:
         out.append(d)
     out.sort(key=lambda x: x["name"].lower())
     return out
+
+
+def _parse_qos_bandwidth(el: Element) -> dict:
+    """Parse egress-guaranteed/egress-max bandwidth values off an element,
+    if present. Used for both the aggregate (mbps/percentage) level and the
+    optional per-class 'bandwidth' wrapper."""
+    out: dict = {}
+    for scm_key, xml_tag in (
+        ("egress_guaranteed", "egress-guaranteed"),
+        ("egress_max", "egress-max"),
+    ):
+        val = el.findtext(xml_tag)
+        if val is not None:
+            try:
+                out[scm_key] = int(val)
+            except ValueError:
+                pass
+    return out
+
+
+def export_qos_interface_profiles(network_root) -> list[dict]:
+    """Export interface-level QoS bandwidth/priority profiles from
+    network/qos/profile.
+
+    This is a distinct PAN-OS construct from export_qos_rules(), which
+    exports the vsys **policy** QoS rules (rulebase match criteria ->
+    DSCP/class marking). network/qos/profile instead defines the
+    class-bandwidth allocation profile applied to a physical interface's
+    QoS settings — same "QoS" name, completely separate object.
+    """
+    out = []
+    if network_root is None:
+        return out
+    container = network_root.find("qos/profile")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        d: dict = {"name": name}
+
+        cbt_el = entry.find("class-bandwidth-type")
+        if cbt_el is not None:
+            for bandwidth_type in ("mbps", "percentage"):
+                bw_el = cbt_el.find(bandwidth_type)
+                if bw_el is None:
+                    continue
+                d["bandwidth_type"] = bandwidth_type
+                d.update(_parse_qos_bandwidth(bw_el))
+
+                classes = []
+                class_container = bw_el.find("class")
+                if class_container is not None:
+                    for cls_entry in class_container.findall("entry"):
+                        cls_name = cls_entry.get("name", "")
+                        cls_d: dict = {"name": cls_name}
+                        priority = cls_entry.findtext("priority")
+                        if priority:
+                            cls_d["priority"] = priority
+                        # bandwidth may be a nested wrapper or direct children
+                        cls_bw_el = cls_entry.find("bandwidth")
+                        cls_bw = _parse_qos_bandwidth(cls_bw_el if cls_bw_el is not None else cls_entry)
+                        cls_d.update(cls_bw)
+                        classes.append(cls_d)
+                classes.sort(key=lambda c: c["name"].lower())
+                if classes:
+                    d["classes"] = classes
+                break  # only one bandwidth-type child (mbps/percentage) is present
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
