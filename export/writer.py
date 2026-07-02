@@ -24,6 +24,7 @@ from export.objects import (
     export_pbf_rules,
     export_qos_rules,
     export_ike_crypto_profiles,
+    export_gp_app_crypto_profiles,
     export_ipsec_crypto_profiles,
     export_ike_gateways,
     export_ipsec_tunnels,
@@ -139,6 +140,7 @@ def build_export(
     qos_rules          = export_qos_rules(vsys_root)
 
     ike_crypto_profiles   = export_ike_crypto_profiles(network_root)
+    gp_app_crypto_profiles = export_gp_app_crypto_profiles(network_root)
     ipsec_crypto_profiles = export_ipsec_crypto_profiles(network_root)
     ike_gateways          = export_ike_gateways(network_root)
     ipsec_tunnels         = export_ipsec_tunnels(network_root)
@@ -337,6 +339,7 @@ def build_export(
         "network": {
             "virtual_routers": virtual_routers,
             "ike_crypto_profiles": ike_crypto_profiles,
+            "gp_app_crypto_profiles": gp_app_crypto_profiles,
             "ipsec_crypto_profiles": ipsec_crypto_profiles,
             "ike_gateways": ike_gateways,
             "ipsec_tunnels": ipsec_tunnels,
@@ -447,6 +450,7 @@ def write_export(data: dict, output_path: str) -> None:
     print(
         f"  network : {len(vrs)} virtual_router(s)  "
         f"{len(net.get('ike_crypto_profiles', []))} ike_crypto  "
+        f"{len(net.get('gp_app_crypto_profiles', []))} gp_app_crypto  "
         f"{len(net.get('ipsec_crypto_profiles', []))} ipsec_crypto  "
         f"{len(net.get('ike_gateways', []))} ike_gw  "
         f"{len(net.get('ipsec_tunnels', []))} ipsec_tunnel  "
