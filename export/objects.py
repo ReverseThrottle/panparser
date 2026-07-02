@@ -725,24 +725,36 @@ def export_vlan_interfaces(network_root: Element | None) -> tuple[list[dict], li
 
 def export_ethernet_interfaces(
     network_root: Element | None,
-) -> tuple[list[dict], list[dict]]:
-    """Return (parent_interfaces, layer3_subinterfaces).
+) -> tuple[list[dict], list[dict], list[str]]:
+    """Return (parent_interfaces, layer3_subinterfaces, notes).
 
     Parent ethernet interfaces are pushed as layer3 mode with no IP.
     Subinterfaces (units) carry the IP/VLAN config and are pushed separately.
+
+    An interface may also be configured as virtual-wire, ha, or tap mode
+    instead of layer2/layer3. 'tap' maps directly to the SCM SDK's
+    EthernetTap model. 'virtual-wire' and 'ha' have no SCM SDK equivalent
+    (EthernetInterfaceCreateModel only supports layer2/layer3/tap), so those
+    modes are tagged in the export for visibility and a migration note is
+    emitted so the caller can surface a warning instead of migrating the
+    interface silently as blank.
     """
     if network_root is None:
-        return [], []
+        return [], [], []
     container = network_root.find("interface/ethernet")
     if container is None:
-        return [], []
+        return [], [], []
     parents: list[dict] = []
     subinterfaces: list[dict] = []
+    notes: list[str] = []
 
     for entry in container.findall("entry"):
         name = entry.get("name", "")
         layer3 = entry.find("layer3")
         layer2 = entry.find("layer2")
+        virtual_wire = entry.find("virtual-wire")
+        ha = entry.find("ha")
+        tap = entry.find("tap")
 
         parent: dict = {"name": name}
         comment = entry.findtext("comment")
@@ -776,10 +788,29 @@ def export_ethernet_interfaces(
                 subinterfaces.append(sub)
         elif layer2 is not None:
             parent["layer2"] = {}
+        elif tap is not None:
+            parent["tap"] = {}
+        elif virtual_wire is not None:
+            parent["virtual_wire"] = {}
+            notes.append(
+                f"Ethernet interface '{name}' is configured in virtual-wire mode. "
+                "The SCM SDK's ethernet interface model has no virtual-wire equivalent "
+                "(only layer2/layer3/tap are supported) — tagged as 'virtual_wire' in the "
+                "export, but this cannot be pushed as-is and must be configured manually "
+                "in SCM, including its vwire zone binding."
+            )
+        elif ha is not None:
+            parent["ha"] = {}
+            notes.append(
+                f"Ethernet interface '{name}' is configured in HA mode. "
+                "The SCM SDK's ethernet interface model has no HA equivalent "
+                "(only layer2/layer3/tap are supported) — tagged as 'ha' in the export, "
+                "but this cannot be pushed as-is and must be configured manually in SCM."
+            )
 
         parents.append(parent)
 
-    return parents, subinterfaces
+    return parents, subinterfaces, notes
 
 
 def export_aggregate_interfaces(
