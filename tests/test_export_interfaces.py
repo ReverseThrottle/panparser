@@ -145,10 +145,10 @@ class TestExportEthernetInterfaces:
 
 class TestExportAggregateInterfaces:
     def test_returns_empty_when_network_root_none(self):
-        assert export_aggregate_interfaces(None) == ([], [])
+        assert export_aggregate_interfaces(None) == ([], [], [])
 
     def test_returns_empty_when_no_aggregate_container(self):
-        assert export_aggregate_interfaces(_net("<interface/>")) == ([], [])
+        assert export_aggregate_interfaces(_net("<interface/>")) == ([], [], [])
 
     def test_dhcp_client_interface_populates_dhcp_client(self):
         """Aggregate interfaces mirror the same dhcp-client fix as ethernet."""
@@ -165,11 +165,12 @@ class TestExportAggregateInterfaces:
           </aggregate-ethernet>
         </interface>
         """
-        parents, subs = export_aggregate_interfaces(_net(xml))
+        parents, subs, notes = export_aggregate_interfaces(_net(xml))
         assert len(parents) == 1
         layer3 = parents[0]["layer3"]
         assert layer3 != {}
         assert layer3["dhcp_client"] == {"create_default_route": False}
+        assert notes == []
 
     def test_static_ip_interface_has_no_dhcp_client(self):
         xml = """
@@ -183,6 +184,7 @@ class TestExportAggregateInterfaces:
           </aggregate-ethernet>
         </interface>
         """
-        parents, subs = export_aggregate_interfaces(_net(xml))
+        parents, subs, notes = export_aggregate_interfaces(_net(xml))
         assert parents[0]["layer3"]["ip"] == [{"name": "10.250.110.1/24"}]
         assert "dhcp_client" not in parents[0]["layer3"]
+        assert notes == []

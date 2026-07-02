@@ -888,24 +888,38 @@ def _export_dhcp_client(layer3: Element) -> dict | None:
 
 def export_aggregate_interfaces(
     network_root: Element | None,
-) -> tuple[list[dict], list[dict]]:
-    """Return (parent_ae_interfaces, layer3_subinterfaces).
+) -> tuple[list[dict], list[dict], list[str]]:
+    """Return (parent_ae_interfaces, layer3_subinterfaces, notes).
 
     Parent aggregate interfaces (ae1, ae2…) are pushed as $ae-N variables.
     Subinterfaces (ae1.1, ae1.2…) carry IP/VLAN config and are pushed separately.
+
+    An AE interface may also be configured as virtual-wire, ha, or tap mode
+    instead of layer2/layer3, exactly like a physical ethernet interface. Unlike
+    the ethernet interface SCM SDK model — which has a dedicated ``tap`` field —
+    the aggregate interface SDK model (``AggregateInterfaceBaseModel``) only
+    supports ``layer2``/``layer3``; it has no ``tap`` field at all. So for AE
+    interfaces, virtual-wire, ha, *and* tap all have no SCM SDK equivalent and
+    are tagged in the export for visibility, each emitting a migration note so
+    the caller can surface a warning instead of migrating the interface
+    silently as blank.
     """
     if network_root is None:
-        return [], []
+        return [], [], []
     container = network_root.find("interface/aggregate-ethernet")
     if container is None:
-        return [], []
+        return [], [], []
     parents: list[dict] = []
     subinterfaces: list[dict] = []
+    notes: list[str] = []
 
     for entry in container.findall("entry"):
         name = entry.get("name", "")
         layer3 = entry.find("layer3")
         layer2 = entry.find("layer2")
+        virtual_wire = entry.find("virtual-wire")
+        ha = entry.find("ha")
+        tap = entry.find("tap")
 
         parent: dict = {"name": name}
         comment = entry.findtext("comment")
@@ -942,10 +956,39 @@ def export_aggregate_interfaces(
                 subinterfaces.append(sub)
         elif layer2 is not None:
             parent["layer2"] = {}
+        elif tap is not None:
+            parent["tap"] = {}
+            notes.append(
+                f"Aggregate interface '{name}' is configured in tap mode. "
+                "The SCM SDK's aggregate interface model has no tap equivalent "
+                "(only layer2/layer3 are supported — unlike the ethernet interface "
+                "model, which has a dedicated tap field) — tagged as 'tap' in the "
+                "export, but this cannot be pushed as-is and must be configured "
+                "manually in SCM."
+            )
+        elif virtual_wire is not None:
+            parent["virtual_wire"] = {}
+            notes.append(
+                f"Aggregate interface '{name}' is configured in virtual-wire mode. "
+                "The SCM SDK's aggregate interface model has no virtual-wire "
+                "equivalent (only layer2/layer3 are supported) — tagged as "
+                "'virtual_wire' in the export, but this cannot be pushed as-is and "
+                "must be configured manually in SCM, including its vwire zone "
+                "binding."
+            )
+        elif ha is not None:
+            parent["ha"] = {}
+            notes.append(
+                f"Aggregate interface '{name}' is configured in HA mode. "
+                "The SCM SDK's aggregate interface model has no HA equivalent "
+                "(only layer2/layer3 are supported) — tagged as 'ha' in the "
+                "export, but this cannot be pushed as-is and must be configured "
+                "manually in SCM."
+            )
 
         parents.append(parent)
 
-    return parents, subinterfaces
+    return parents, subinterfaces, notes
 
 
 def export_decryption_rules(vsys_root) -> list[dict]:
@@ -2413,6 +2456,50 @@ def export_gp_gateways(vsys_root) -> list[dict]:
             d["client_auth"] = client_auth_entries
         d["client_auth_count"] = len(client_auth_entries)
 
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
+def export_ssl_profiles(shared_root) -> list[dict]:
+    """Export SSL/TLS Service Profiles from shared/ssl-tls-service-profile.
+
+    Mirrors what the TUI already surfaces (parsers/ssl_profiles.py::render_ssl_profiles()):
+    name, certificate, min_version, and max_version. The certificate is a reference by
+    name only — the caller is expected to surface a migration_warning since the
+    referenced certificate object must exist in SCM before the push will succeed
+    (same pattern as export_saml_server_profiles()).
+
+    Known limitation — cipher suite flags intentionally out of scope: PAN-OS also
+    carries per-profile cipher suite restriction flags under protocol-settings
+    (keyxchg-algo-*, enc-algo-*, auth-algo-*). Checked the scm-mcp SDK
+    (scm.models.security.decryption_profiles.SSLProtocolSettings) — it supports
+    exactly this set of boolean flags, but only for Decryption Profiles. As of this
+    SDK version there is no SSL/TLS Service Profile model at all, so there is no
+    supported field to push these flags into for this object type. They are left out
+    here as a documented limitation rather than silently dropped; recreate cipher
+    suite restrictions manually in SCM after migration if they matter for a profile.
+    """
+    out = []
+    if shared_root is None:
+        return out
+    container = shared_root.find("ssl-tls-service-profile")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        if not name:
+            continue
+        d: dict = {"name": name}
+        certificate = entry.findtext("certificate") or ""
+        if certificate:
+            d["certificate"] = certificate
+        min_ver = entry.findtext("protocol-settings/min-version") or ""
+        if min_ver:
+            d["min_version"] = min_ver
+        max_ver = entry.findtext("protocol-settings/max-version") or ""
+        if max_ver:
+            d["max_version"] = max_ver
         out.append(d)
     out.sort(key=lambda x: x["name"].lower())
     return out
