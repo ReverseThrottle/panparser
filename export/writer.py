@@ -160,7 +160,7 @@ def build_export(
     tunnel_interfaces, tunnel_notes     = export_tunnel_interfaces(network_root)
     vlan_interfaces, vlan_notes         = export_vlan_interfaces(network_root)
     ethernet_parents, ethernet_subinterfaces, ethernet_notes = export_ethernet_interfaces(network_root)
-    aggregate_parents, aggregate_subinterfaces = export_aggregate_interfaces(network_root)
+    aggregate_parents, aggregate_subinterfaces, aggregate_notes = export_aggregate_interfaces(network_root)
 
     anti_spyware_profiles           = export_anti_spyware_profiles(vsys_root)
     wildfire_antivirus_profiles     = export_wildfire_antivirus_profiles(vsys_root)
@@ -388,7 +388,7 @@ def build_export(
                 "Bind each $variable to the real device interface in SCM device management."
             ),
         })
-    for note in loopback_notes + tunnel_notes + vlan_notes + ethernet_notes:
+    for note in loopback_notes + tunnel_notes + vlan_notes + ethernet_notes + aggregate_notes:
         warnings.append({
             "severity": "warn",
             "object_path": "network/interfaces",

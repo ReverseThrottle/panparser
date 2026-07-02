@@ -888,24 +888,38 @@ def _export_dhcp_client(layer3: Element) -> dict | None:
 
 def export_aggregate_interfaces(
     network_root: Element | None,
-) -> tuple[list[dict], list[dict]]:
-    """Return (parent_ae_interfaces, layer3_subinterfaces).
+) -> tuple[list[dict], list[dict], list[str]]:
+    """Return (parent_ae_interfaces, layer3_subinterfaces, notes).
 
     Parent aggregate interfaces (ae1, ae2…) are pushed as $ae-N variables.
     Subinterfaces (ae1.1, ae1.2…) carry IP/VLAN config and are pushed separately.
+
+    An AE interface may also be configured as virtual-wire, ha, or tap mode
+    instead of layer2/layer3, exactly like a physical ethernet interface. Unlike
+    the ethernet interface SCM SDK model — which has a dedicated ``tap`` field —
+    the aggregate interface SDK model (``AggregateInterfaceBaseModel``) only
+    supports ``layer2``/``layer3``; it has no ``tap`` field at all. So for AE
+    interfaces, virtual-wire, ha, *and* tap all have no SCM SDK equivalent and
+    are tagged in the export for visibility, each emitting a migration note so
+    the caller can surface a warning instead of migrating the interface
+    silently as blank.
     """
     if network_root is None:
-        return [], []
+        return [], [], []
     container = network_root.find("interface/aggregate-ethernet")
     if container is None:
-        return [], []
+        return [], [], []
     parents: list[dict] = []
     subinterfaces: list[dict] = []
+    notes: list[str] = []
 
     for entry in container.findall("entry"):
         name = entry.get("name", "")
         layer3 = entry.find("layer3")
         layer2 = entry.find("layer2")
+        virtual_wire = entry.find("virtual-wire")
+        ha = entry.find("ha")
+        tap = entry.find("tap")
 
         parent: dict = {"name": name}
         comment = entry.findtext("comment")
@@ -942,10 +956,39 @@ def export_aggregate_interfaces(
                 subinterfaces.append(sub)
         elif layer2 is not None:
             parent["layer2"] = {}
+        elif tap is not None:
+            parent["tap"] = {}
+            notes.append(
+                f"Aggregate interface '{name}' is configured in tap mode. "
+                "The SCM SDK's aggregate interface model has no tap equivalent "
+                "(only layer2/layer3 are supported — unlike the ethernet interface "
+                "model, which has a dedicated tap field) — tagged as 'tap' in the "
+                "export, but this cannot be pushed as-is and must be configured "
+                "manually in SCM."
+            )
+        elif virtual_wire is not None:
+            parent["virtual_wire"] = {}
+            notes.append(
+                f"Aggregate interface '{name}' is configured in virtual-wire mode. "
+                "The SCM SDK's aggregate interface model has no virtual-wire "
+                "equivalent (only layer2/layer3 are supported) — tagged as "
+                "'virtual_wire' in the export, but this cannot be pushed as-is and "
+                "must be configured manually in SCM, including its vwire zone "
+                "binding."
+            )
+        elif ha is not None:
+            parent["ha"] = {}
+            notes.append(
+                f"Aggregate interface '{name}' is configured in HA mode. "
+                "The SCM SDK's aggregate interface model has no HA equivalent "
+                "(only layer2/layer3 are supported) — tagged as 'ha' in the "
+                "export, but this cannot be pushed as-is and must be configured "
+                "manually in SCM."
+            )
 
         parents.append(parent)
 
-    return parents, subinterfaces
+    return parents, subinterfaces, notes
 
 
 def export_decryption_rules(vsys_root) -> list[dict]:
