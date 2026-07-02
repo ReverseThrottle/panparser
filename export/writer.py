@@ -63,6 +63,7 @@ from export.objects import (
     export_kerberos_server_profiles,
     export_saml_server_profiles,
     export_tacacs_server_profiles,
+    export_gp_gateways,
     export_device_setup,
     export_high_availability,
     export_botnet_report,
@@ -187,6 +188,7 @@ def build_export(
     kerberos_server_profiles = export_kerberos_server_profiles(vsys_root)
     saml_server_profiles     = export_saml_server_profiles(vsys_root)
     tacacs_server_profiles   = export_tacacs_server_profiles(vsys_root)
+    gp_gateways              = export_gp_gateways(vsys_root)
 
     # Device Setup — device-scoped, requires serial at push time
     mgmt_interface, service_settings, service_routes = export_device_setup(root)
@@ -310,6 +312,21 @@ def build_export(
                 "exported for reference only. SCM/Strata Logging Service has no direct "
                 "equivalent object for these thresholds and report settings — recreate "
                 "the equivalent alerting/reporting manually in SCM after migration."
+            ),
+        })
+    if gp_gateways:
+        warnings.append({
+            "severity": "warn",
+            "object_path": "objects/gp_gateways",
+            "message": (
+                f"{len(gp_gateways)} GlobalProtect gateway(s) exported. The referenced "
+                "ssl_tls_service_profile and remote_user_tunnel (tunnel interface) must "
+                "already exist in SCM before this push will succeed. v1 export scope "
+                "covers name, ssl_tls_service_profile, tunnel_mode, remote_user_tunnel, "
+                "and client_auth entries only — roles, remote-user-tunnel-configs, and "
+                "gp-gw-dhcp (DHCP pool / login-lifetime / per-tunnel auth-override, "
+                "source-address/user, and OS restrictions) are not exported and must be "
+                "configured manually in SCM after migration."
             ),
         })
 
@@ -456,6 +473,7 @@ def build_export(
             "kerberos_server_profiles": kerberos_server_profiles,
             "saml_server_profiles": saml_server_profiles,
             "tacacs_server_profiles": tacacs_server_profiles,
+            "gp_gateways": gp_gateways,
         },
         "policy": {
             "security_rules": security_rules,
@@ -578,7 +596,8 @@ def write_export(data: dict, output_path: str) -> None:
         f"{len(objs.get('ldap_server_profiles',[]))} ldap  "
         f"{len(objs.get('kerberos_server_profiles',[]))} kerberos  "
         f"{len(objs.get('saml_server_profiles',[]))} saml  "
-        f"{len(objs.get('tacacs_server_profiles',[]))} tacacs",
+        f"{len(objs.get('tacacs_server_profiles',[]))} tacacs  "
+        f"{len(objs.get('gp_gateways',[]))} gp_gateways",
         file=sys.stderr,
     )
     print(

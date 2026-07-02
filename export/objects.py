@@ -2342,6 +2342,82 @@ def export_saml_server_profiles(vsys_root) -> list[dict]:
     return out
 
 
+def export_gp_gateways(vsys_root) -> list[dict]:
+    """Export GlobalProtect gateways from vsys/global-protect/global-protect-gateway.
+
+    v1 scope mirrors what the TUI already surfaces (parsers/globalprotect.py::
+    render_gp_gateways()), vetted against real data in 440-config.xml and
+    uas-config.xml: name, ssl_tls_service_profile, tunnel_mode, remote_user_tunnel,
+    plus the actual client-auth entries (name/os/authentication-profile/etc.) since
+    their structure is flat and consistent across both real configs.
+
+    Known limitations — intentionally NOT exported in this pass (full HIP-profile /
+    DHCP-pool / satellite-config fidelity is out of scope for v1):
+      - roles (login lifetime / inactivity logout / notification messages)
+      - remote-user-tunnel-configs (per-tunnel auth-override, source-address/user,
+        ip-pool, os restrictions)
+      - gp-gw-dhcp (DHCP pool settings for the tunnel interface)
+      - log-setting / log-success (logging configuration)
+    These are real, present in the source data, but deferred until a follow-up
+    pass — they are not silently dropped, just out of scope for v1.
+    """
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("global-protect/global-protect-gateway")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        d: dict = {"name": name}
+
+        ssl_profile = entry.findtext("ssl-tls-service-profile")
+        if ssl_profile:
+            d["ssl_tls_service_profile"] = ssl_profile
+
+        tunnel_mode = entry.findtext("tunnel-mode")
+        d["tunnel_mode"] = (tunnel_mode or "no").lower() == "yes"
+
+        remote_user_tunnel = entry.findtext("remote-user-tunnel")
+        if remote_user_tunnel:
+            d["remote_user_tunnel"] = remote_user_tunnel
+
+        client_auth_entries = []
+        for ca_entry in entry.findall("client-auth/entry"):
+            ca_name = ca_entry.get("name", "")
+            ca: dict = {"name": ca_name}
+            os_val = ca_entry.findtext("os")
+            if os_val:
+                ca["os"] = os_val
+            auth_profile = ca_entry.findtext("authentication-profile")
+            if auth_profile:
+                ca["authentication_profile"] = auth_profile
+            auth_message = ca_entry.findtext("authentication-message")
+            if auth_message:
+                ca["authentication_message"] = auth_message
+            cred_required = ca_entry.findtext("user-credential-or-client-cert-required")
+            if cred_required is not None:
+                ca["user_credential_or_client_cert_required"] = cred_required.lower() == "yes"
+            auto_passcode = ca_entry.findtext("auto-retrieve-passcode")
+            if auto_passcode is not None:
+                ca["auto_retrieve_passcode"] = auto_passcode.lower() == "yes"
+            username_label = ca_entry.findtext("username-label")
+            if username_label:
+                ca["username_label"] = username_label
+            password_label = ca_entry.findtext("password-label")
+            if password_label:
+                ca["password_label"] = password_label
+            client_auth_entries.append(ca)
+
+        if client_auth_entries:
+            d["client_auth"] = client_auth_entries
+        d["client_auth_count"] = len(client_auth_entries)
+
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
 _DEVICE_SYSTEM_PATH = "devices/entry/deviceconfig/system"
 
 
