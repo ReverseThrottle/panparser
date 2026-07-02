@@ -19,6 +19,7 @@ from parsers.nat import render_nat_rules
 from parsers.zones import render_zones
 from parsers.virtual_wire import render_virtual_wires
 from parsers.interfaces import render_interfaces
+from parsers.dhcp import render_dhcp_servers
 from parsers.routing import render_routing
 from parsers.tags import render_tags
 from parsers.profiles import render_profiles
@@ -30,12 +31,14 @@ from parsers.certificates import render_certificates
 from parsers.auth_profiles import render_auth_profiles
 from parsers.ssl_profiles import render_ssl_profiles
 from parsers.zone_protection import render_zone_protection
+from parsers.monitor_profiles import render_monitor_profiles
 from parsers.globalprotect import render_gp_gateways, render_gp_portals
 from parsers.decryption import render_decryption_rules
 from parsers.pbf import render_pbf_rules
 from parsers.app_override import render_app_override_rules
 from parsers.auth_rules import render_auth_rules
 from parsers.qos_rules import render_qos_rules
+from parsers.qos_profiles import render_qos_interface_profiles
 from parsers.url_categories import render_url_categories
 from parsers.server_profiles import render_server_profiles
 from parsers.ike import render_ike_gateways, render_ike_crypto, render_ipsec_crypto
@@ -55,6 +58,7 @@ SECTIONS = [
     "zones",
     "virtual-wires",
     "interfaces",
+    "dhcp-servers",
     "routing",
     "tags",
     "profiles",
@@ -65,6 +69,7 @@ SECTIONS = [
     "auth-profiles",
     "ssl-profiles",
     "zone-protection",
+    "monitor-profiles",
     "gp-gateways",
     "gp-portals",
     "decryption",
@@ -72,6 +77,7 @@ SECTIONS = [
     "app-override",
     "auth-rules",
     "qos-rules",
+    "qos-profiles",
     "url-categories",
     "server-profiles",
     "ike-gateways",
@@ -244,6 +250,8 @@ def main() -> None:
                                    render_virtual_wires(network_root, console, grep)),
         "interfaces":     lambda: (section_header(console, "Interfaces"),
                                    render_interfaces(network_root, console, grep)),
+        "dhcp-servers":   lambda: (section_header(console, "DHCP Servers"),
+                                   render_dhcp_servers(network_root, console, grep)),
         "routing":        lambda: (section_header(console, "Static Routes"),
                                    render_routing(network_root, console, grep)),
         "tags":           lambda: (section_header(console, "Tags"),
@@ -264,6 +272,8 @@ def main() -> None:
                                    render_ssl_profiles(shared_root, console, grep)),
         "zone-protection": lambda: (section_header(console, "Zone Protection Profiles"),
                                     render_zone_protection(network_root, console, grep)),
+        "monitor-profiles": lambda: (section_header(console, "Monitor Profiles"),
+                                     render_monitor_profiles(network_root, console, grep)),
         "gp-gateways":    lambda: (section_header(console, "GlobalProtect Gateways"),
                                    render_gp_gateways(vsys_root, console, grep)),
         "gp-portals":     lambda: (section_header(console, "GlobalProtect Portals"),
@@ -278,6 +288,8 @@ def main() -> None:
                                    render_auth_rules(vsys_root, console, grep)),
         "qos-rules":      lambda: (section_header(console, "QoS Rules"),
                                    render_qos_rules(vsys_root, console, grep)),
+        "qos-profiles":   lambda: (section_header(console, "QoS Interface Profiles"),
+                                   render_qos_interface_profiles(network_root, console, grep)),
         "url-categories": lambda: (section_header(console, "Custom URL Categories"),
                                    render_url_categories(vsys_root, console, grep)),
         "server-profiles": lambda: (section_header(console, "Server Profiles"),

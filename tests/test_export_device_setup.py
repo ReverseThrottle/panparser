@@ -48,6 +48,29 @@ class TestExportManagementInterface:
         result = export_management_interface(_root("<hostname>fw01</hostname>"))
         assert result == {}
 
+    def test_ip_addressing_captured(self):
+        xml = """
+        <ip-address>192.168.10.213</ip-address>
+        <netmask>255.255.255.0</netmask>
+        <default-gateway>192.168.10.1</default-gateway>
+        """
+        result = export_management_interface(_root(xml))
+        assert result["ip_address"] == "192.168.10.213"
+        assert result["netmask"] == "255.255.255.0"
+        assert result["default_gateway"] == "192.168.10.1"
+
+    def test_type_static(self):
+        result = export_management_interface(_root("<type><static/></type>"))
+        assert result["type"] == "static"
+
+    def test_type_dhcp_client(self):
+        result = export_management_interface(_root("<type><dhcp-client/></type>"))
+        assert result["type"] == "dhcp-client"
+
+    def test_type_absent_when_no_type_element(self):
+        result = export_management_interface(_root("<hostname>fw01</hostname>"))
+        assert "type" not in result
+
     def test_permitted_ip_entries(self):
         xml = """
         <permitted-ip>
@@ -57,27 +80,66 @@ class TestExportManagementInterface:
         """
         result = export_management_interface(_root(xml))
         assert result["permitted_ip"] == ["10.250.98.0/24", "10.250.100.0/24"]
+        assert "permitted_ip_descriptions" not in result
 
     def test_empty_permitted_ip_element_excluded(self):
         result = export_management_interface(_root("<permitted-ip/>"))
         assert "permitted_ip" not in result
 
-    def test_protocol_flags_yes_maps_to_true(self):
-        xml = "<ssh>yes</ssh><https>yes</https><ping>yes</ping><snmp>yes</snmp>"
+    def test_permitted_ip_descriptions_captured_separately(self):
+        xml = """
+        <permitted-ip>
+          <entry name="137.229.21.128/26">
+            <description>RCS Elvey Office LAN</description>
+          </entry>
+          <entry name="137.229.0.0/24"/>
+        </permitted-ip>
+        """
         result = export_management_interface(_root(xml))
-        assert result["ssh"] is True
-        assert result["https"] is True
-        assert result["ping"] is True
-        assert result["snmp"] is True
+        assert result["permitted_ip"] == ["137.229.21.128/26", "137.229.0.0/24"]
+        assert result["permitted_ip_descriptions"] == {
+            "137.229.21.128/26": "RCS Elvey Office LAN"
+        }
 
-    def test_protocol_flag_no_maps_to_false(self):
-        result = export_management_interface(_root("<telnet>no</telnet>"))
+    def test_protocol_flags_disable_yes_maps_to_false(self):
+        xml = """
+        <service>
+          <disable-ssh>yes</disable-ssh>
+          <disable-https>yes</disable-https>
+          <disable-telnet>yes</disable-telnet>
+          <disable-http>yes</disable-http>
+        </service>
+        """
+        result = export_management_interface(_root(xml))
+        assert result["ssh"] is False
+        assert result["https"] is False
         assert result["telnet"] is False
+        assert result["http"] is False
+
+    def test_protocol_flag_disable_no_maps_to_true(self):
+        xml = "<service><disable-telnet>no</disable-telnet></service>"
+        result = export_management_interface(_root(xml))
+        assert result["telnet"] is True
 
     def test_absent_protocol_flag_not_included(self):
-        result = export_management_interface(_root("<ssh>yes</ssh>"))
+        xml = "<service><disable-ssh>yes</disable-ssh></service>"
+        result = export_management_interface(_root(xml))
+        assert "ssh" in result
         assert "telnet" not in result
         assert "https" not in result
+        assert "http" not in result
+
+    def test_top_level_protocol_tags_no_longer_read(self):
+        """Old (buggy) shape: ssh/https/telnet as direct children of <system>.
+
+        Real PAN-OS configs nest these under service/disable-*, so the
+        direct-child tags must no longer be interpreted as flags.
+        """
+        xml = "<ssh>yes</ssh><https>yes</https><telnet>no</telnet>"
+        result = export_management_interface(_root(xml))
+        assert "ssh" not in result
+        assert "https" not in result
+        assert "telnet" not in result
 
     def test_ssh_port_override(self):
         result = export_management_interface(_root("<ssh-port>2222</ssh-port>"))
@@ -93,23 +155,34 @@ class TestExportManagementInterface:
 
     def test_full_management_interface(self):
         xml = """
+        <ip-address>192.168.10.213</ip-address>
+        <netmask>255.255.255.0</netmask>
+        <default-gateway>192.168.10.1</default-gateway>
+        <type><static/></type>
+        <service>
+          <disable-telnet>yes</disable-telnet>
+          <disable-http>yes</disable-http>
+        </service>
         <permitted-ip>
-          <entry name="10.250.98.0/24"/>
+          <entry name="10.250.98.0/24">
+            <description>RCS Elvey Office LAN</description>
+          </entry>
           <entry name="10.250.100.0/24"/>
         </permitted-ip>
-        <ssh>yes</ssh>
-        <https>yes</https>
-        <ping>yes</ping>
-        <snmp>yes</snmp>
-        <telnet>no</telnet>
         """
         result = export_management_interface(_root(xml))
+        assert result["ip_address"] == "192.168.10.213"
+        assert result["netmask"] == "255.255.255.0"
+        assert result["default_gateway"] == "192.168.10.1"
+        assert result["type"] == "static"
         assert result["permitted_ip"] == ["10.250.98.0/24", "10.250.100.0/24"]
-        assert result["ssh"] is True
-        assert result["https"] is True
-        assert result["ping"] is True
-        assert result["snmp"] is True
+        assert result["permitted_ip_descriptions"] == {
+            "10.250.98.0/24": "RCS Elvey Office LAN"
+        }
         assert result["telnet"] is False
+        assert result["http"] is False
+        assert "ssh" not in result
+        assert "https" not in result
 
 
 # ── export_service_settings ────────────────────────────────────────────────────
@@ -245,13 +318,15 @@ class TestExportServiceRoutes:
         assert result == []
 
     def test_single_route_interface_only(self):
+        # Real PAN-OS schema: route/service/entry/source/interface (not
+        # source-address/interface — see issue #23).
         xml = """
         <route>
           <service>
             <entry name="dns">
-              <source-address>
+              <source>
                 <interface>management</interface>
-              </source-address>
+              </source>
             </entry>
           </service>
         </route>
@@ -263,14 +338,16 @@ class TestExportServiceRoutes:
         assert "source_ip" not in result[0]
 
     def test_route_with_source_ip(self):
+        # Real PAN-OS schema uses source/address, not
+        # source-address/ip-address (see UA-HAARP-Cofnig_20260605.xml).
         xml = """
         <route>
           <service>
             <entry name="ntp">
-              <source-address>
+              <source>
                 <interface>management</interface>
-                <ip-address>10.250.100.5</ip-address>
-              </source-address>
+                <address>10.250.100.5</address>
+              </source>
             </entry>
           </service>
         </route>
@@ -283,13 +360,13 @@ class TestExportServiceRoutes:
         <route>
           <service>
             <entry name="dns">
-              <source-address><interface>management</interface></source-address>
+              <source><interface>management</interface></source>
             </entry>
             <entry name="ntp">
-              <source-address><interface>management</interface></source-address>
+              <source><interface>management</interface></source>
             </entry>
             <entry name="syslog">
-              <source-address><interface>ethernet1/1</interface></source-address>
+              <source><interface>ethernet1/1</interface></source>
             </entry>
           </service>
         </route>
@@ -318,10 +395,10 @@ class TestExportServiceRoutes:
         <route>
           <service>
             <entry name="">
-              <source-address><interface>management</interface></source-address>
+              <source><interface>management</interface></source>
             </entry>
             <entry name="ntp">
-              <source-address><interface>management</interface></source-address>
+              <source><interface>management</interface></source>
             </entry>
           </service>
         </route>
@@ -329,6 +406,98 @@ class TestExportServiceRoutes:
         result = export_service_routes(_root(xml))
         assert len(result) == 1
         assert result[0]["service"] == "ntp"
+
+    def test_returns_empty_list_when_no_destination_entries(self):
+        result = export_service_routes(_root("<route><destination/></route>"))
+        assert result == []
+
+    def test_single_destination_route(self):
+        # Mirrors UA-HAARP-Cofnig_20260605.xml's route/destination/entry
+        # shape, which is a completely separate construct from
+        # route/service and was previously never read at all.
+        xml = """
+        <route>
+          <destination>
+            <entry name="10.36.0.25">
+              <source>
+                <interface>ethernet1/7.360</interface>
+                <address>10.36.0.1/24</address>
+              </source>
+            </entry>
+          </destination>
+        </route>
+        """
+        result = export_service_routes(_root(xml))
+        assert len(result) == 1
+        assert result[0]["destination"] == "10.36.0.25"
+        assert result[0]["interface"] == "ethernet1/7.360"
+        assert result[0]["source_ip"] == "10.36.0.1/24"
+
+    def test_destination_entry_with_no_interface_excluded_gracefully(self):
+        xml = """
+        <route>
+          <destination>
+            <entry name="10.36.0.25"/>
+          </destination>
+        </route>
+        """
+        result = export_service_routes(_root(xml))
+        assert len(result) == 1
+        assert result[0] == {"destination": "10.36.0.25"}
+
+    def test_destination_entry_with_blank_name_skipped(self):
+        xml = """
+        <route>
+          <destination>
+            <entry name="">
+              <source><interface>ethernet1/1</interface></source>
+            </entry>
+            <entry name="10.36.0.25">
+              <source><interface>ethernet1/7.360</interface></source>
+            </entry>
+          </destination>
+        </route>
+        """
+        result = export_service_routes(_root(xml))
+        assert len(result) == 1
+        assert result[0]["destination"] == "10.36.0.25"
+
+    def test_service_and_destination_routes_both_present(self):
+        # Full repro from issue #23: one route/service entry ("ntp") and
+        # one route/destination entry ("10.36.0.25"), both with
+        # source/interface and source/address populated.
+        xml = """
+        <route>
+          <service>
+            <entry name="ntp">
+              <source>
+                <address>137.229.36.1/24</address>
+                <interface>ethernet1/7.36</interface>
+              </source>
+            </entry>
+          </service>
+          <destination>
+            <entry name="10.36.0.25">
+              <source>
+                <interface>ethernet1/7.360</interface>
+                <address>10.36.0.1/24</address>
+              </source>
+            </entry>
+          </destination>
+        </route>
+        """
+        result = export_service_routes(_root(xml))
+        assert len(result) == 2
+
+        service_route = next(r for r in result if "service" in r)
+        assert service_route["service"] == "ntp"
+        assert service_route["interface"] == "ethernet1/7.36"
+        assert service_route["source_ip"] == "137.229.36.1/24"
+
+        destination_route = next(r for r in result if "destination" in r)
+        assert destination_route["destination"] == "10.36.0.25"
+        assert destination_route["interface"] == "ethernet1/7.360"
+        assert destination_route["source_ip"] == "10.36.0.1/24"
 
     def test_login_banner_is_stripped(self):
         xml = "<login-banner>  Authorized access only  </login-banner>"
