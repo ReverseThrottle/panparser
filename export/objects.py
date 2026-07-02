@@ -2379,3 +2379,130 @@ def export_tacacs_server_profiles(vsys_root) -> list[dict]:
         out.append(d)
     out.sort(key=lambda x: x["name"].lower())
     return out
+
+
+def _threshold_entry(el) -> dict:
+    """Read an <enabled>/<threshold> pair from a botnet http-detection element."""
+    d: dict = {}
+    enabled_raw = el.findtext("enabled")
+    if enabled_raw is not None:
+        d["enabled"] = enabled_raw.strip().lower() == "yes"
+    threshold_raw = el.findtext("threshold")
+    if threshold_raw:
+        try:
+            d["threshold"] = int(threshold_raw)
+        except ValueError:
+            pass
+    return d
+
+
+def _unknown_proto_entry(el) -> dict:
+    """Read destinations/sessions-per-hour and session-length from a botnet
+    unknown-tcp/unknown-udp element."""
+    d: dict = {}
+    for xml_field, key in (
+        ("destinations-per-hour", "destinations_per_hour"),
+        ("sessions-per-hour", "sessions_per_hour"),
+    ):
+        raw = el.findtext(xml_field)
+        if raw:
+            try:
+                d[key] = int(raw)
+            except ValueError:
+                pass
+    length_el = el.find("session-length")
+    if length_el is not None:
+        length: dict = {}
+        for xml_field, key in (
+            ("maximum-bytes", "maximum_bytes"),
+            ("minimum-bytes", "minimum_bytes"),
+        ):
+            raw = length_el.findtext(xml_field)
+            if raw:
+                try:
+                    length[key] = int(raw)
+                except ValueError:
+                    pass
+        if length:
+            d["session_length"] = length
+    return d
+
+
+def export_botnet_report(shared_root) -> dict:
+    """Export the Botnet/C2 traffic report config from shared/botnet.
+
+    Corresponds to Monitor > PDF Reports > Botnet in PAN-OS. SCM/Strata Logging
+    Service has no direct equivalent object for this — exported for reference
+    only, not as a pushable object (see the migration_warning emitted by
+    build_export(), which follows the same pattern as dos_protection profiles).
+    """
+    if shared_root is None:
+        return {}
+    botnet_el = shared_root.find("botnet")
+    if botnet_el is None:
+        return {}
+
+    d: dict = {}
+
+    config_el = botnet_el.find("configuration")
+    if config_el is not None:
+        config: dict = {}
+
+        http_el = config_el.find("http")
+        if http_el is not None:
+            http: dict = {}
+            for xml_field, key in (
+                ("dynamic-dns", "dynamic_dns"),
+                ("malware-sites", "malware_sites"),
+                ("recent-domains", "recent_domains"),
+                ("ip-domains", "ip_domains"),
+                ("executables-from-unknown-sites", "executables_from_unknown_sites"),
+            ):
+                el = http_el.find(xml_field)
+                if el is None:
+                    continue
+                entry = _threshold_entry(el)
+                if entry:
+                    http[key] = entry
+            if http:
+                config["http"] = http
+
+        irc_raw = config_el.findtext("other-applications/irc")
+        if irc_raw is not None:
+            config["other_applications"] = {"irc": irc_raw.strip().lower() == "yes"}
+
+        unknown_el = config_el.find("unknown-applications")
+        if unknown_el is not None:
+            unknown: dict = {}
+            for xml_field, key in (
+                ("unknown-tcp", "unknown_tcp"),
+                ("unknown-udp", "unknown_udp"),
+            ):
+                proto_el = unknown_el.find(xml_field)
+                if proto_el is None:
+                    continue
+                proto = _unknown_proto_entry(proto_el)
+                if proto:
+                    unknown[key] = proto
+            if unknown:
+                config["unknown_applications"] = unknown
+
+        if config:
+            d["configuration"] = config
+
+    report_el = botnet_el.find("report")
+    if report_el is not None:
+        report: dict = {}
+        topn_raw = report_el.findtext("topn")
+        if topn_raw:
+            try:
+                report["topn"] = int(topn_raw)
+            except ValueError:
+                pass
+        scheduled_raw = report_el.findtext("scheduled")
+        if scheduled_raw is not None:
+            report["scheduled"] = scheduled_raw.strip().lower() == "yes"
+        if report:
+            d["report"] = report
+
+    return d
