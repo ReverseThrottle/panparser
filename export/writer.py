@@ -23,6 +23,7 @@ from export.objects import (
     export_authentication_rules,
     export_pbf_rules,
     export_qos_rules,
+    export_qos_interface_profiles,
     export_ike_crypto_profiles,
     export_gp_app_crypto_profiles,
     export_ipsec_crypto_profiles,
@@ -149,6 +150,7 @@ def build_export(
     ike_gateways          = export_ike_gateways(network_root)
     ipsec_tunnels         = export_ipsec_tunnels(network_root)
     lldp_profiles           = export_lldp_profiles(network_root)
+    qos_profiles            = export_qos_interface_profiles(network_root)
     dhcp_servers            = export_dhcp_servers(network_root)
     interface_mgmt_profiles = export_interface_management_profiles(network_root)
     monitor_profiles        = export_monitor_profiles(network_root)
@@ -262,6 +264,16 @@ def build_export(
             "message": (
                 f"{len(lldp_profiles)} LLDP profile(s) exported and will be pushed to SCM "
                 "via direct REST API during migration."
+            ),
+        })
+    if qos_profiles:
+        warnings.append({
+            "severity": "info",
+            "object_path": "network/qos_profiles",
+            "message": (
+                f"{len(qos_profiles)} QoS interface bandwidth/priority profile(s) exported "
+                "(network/qos/profile — distinct from policy QoS rules) and will be pushed "
+                "to SCM via direct REST API during migration."
             ),
         })
     if dhcp_servers:
@@ -392,6 +404,7 @@ def build_export(
             "ike_gateways": ike_gateways,
             "ipsec_tunnels": ipsec_tunnels,
             "lldp_profiles": lldp_profiles,
+            "qos_profiles": qos_profiles,
             "dhcp_servers": dhcp_servers,
             "interface_management_profiles": interface_mgmt_profiles,
             "monitor_profiles": monitor_profiles,
@@ -512,6 +525,7 @@ def write_export(data: dict, output_path: str) -> None:
         f"{len(net.get('ike_gateways', []))} ike_gw  "
         f"{len(net.get('ipsec_tunnels', []))} ipsec_tunnel  "
         f"{len(net.get('lldp_profiles', []))} lldp_profile  "
+        f"{len(net.get('qos_profiles', []))} qos_profile  "
         f"{len(net.get('dhcp_servers', []))} dhcp_server  "
         f"{len(ifaces.get('loopback', []))} loopback  "
         f"{len(ifaces.get('tunnel', []))} tunnel  "

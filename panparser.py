@@ -37,6 +37,7 @@ from parsers.pbf import render_pbf_rules
 from parsers.app_override import render_app_override_rules
 from parsers.auth_rules import render_auth_rules
 from parsers.qos_rules import render_qos_rules
+from parsers.qos_profiles import render_qos_interface_profiles
 from parsers.url_categories import render_url_categories
 from parsers.server_profiles import render_server_profiles
 from parsers.ike import render_ike_gateways, render_ike_crypto, render_ipsec_crypto
@@ -74,6 +75,7 @@ SECTIONS = [
     "app-override",
     "auth-rules",
     "qos-rules",
+    "qos-profiles",
     "url-categories",
     "server-profiles",
     "ike-gateways",
@@ -282,6 +284,8 @@ def main() -> None:
                                    render_auth_rules(vsys_root, console, grep)),
         "qos-rules":      lambda: (section_header(console, "QoS Rules"),
                                    render_qos_rules(vsys_root, console, grep)),
+        "qos-profiles":   lambda: (section_header(console, "QoS Interface Profiles"),
+                                   render_qos_interface_profiles(network_root, console, grep)),
         "url-categories": lambda: (section_header(console, "Custom URL Categories"),
                                    render_url_categories(vsys_root, console, grep)),
         "server-profiles": lambda: (section_header(console, "Server Profiles"),
