@@ -17,6 +17,7 @@ from export.objects import (
     export_application_groups,
     export_url_categories,
     export_zones,
+    export_gp_portals,
     export_security_rules,
     export_nat_rules,
     export_decryption_rules,
@@ -63,6 +64,8 @@ from export.objects import (
     export_kerberos_server_profiles,
     export_saml_server_profiles,
     export_tacacs_server_profiles,
+    export_gp_gateways,
+    export_ssl_profiles,
     export_device_setup,
     export_high_availability,
     export_botnet_report,
@@ -139,6 +142,7 @@ def build_export(
     url_categories     = [c for c in export_url_categories(vsys_root, shared_root)
                           if c.get("list")]   # skip empty URL lists — invalid in SCM
     zones              = export_zones(vsys_root)
+    gp_portals         = export_gp_portals(vsys_root)
     security_rules     = export_security_rules(vsys_root)
     nat_rules          = export_nat_rules(vsys_root)
     decryption_rules   = export_decryption_rules(vsys_root)
@@ -161,7 +165,7 @@ def build_export(
     tunnel_interfaces, tunnel_notes     = export_tunnel_interfaces(network_root)
     vlan_interfaces, vlan_notes         = export_vlan_interfaces(network_root)
     ethernet_parents, ethernet_subinterfaces, ethernet_notes = export_ethernet_interfaces(network_root)
-    aggregate_parents, aggregate_subinterfaces = export_aggregate_interfaces(network_root)
+    aggregate_parents, aggregate_subinterfaces, aggregate_notes = export_aggregate_interfaces(network_root)
 
     anti_spyware_profiles           = export_anti_spyware_profiles(vsys_root)
     wildfire_antivirus_profiles     = export_wildfire_antivirus_profiles(vsys_root)
@@ -188,6 +192,8 @@ def build_export(
     kerberos_server_profiles = export_kerberos_server_profiles(vsys_root)
     saml_server_profiles     = export_saml_server_profiles(vsys_root)
     tacacs_server_profiles   = export_tacacs_server_profiles(vsys_root)
+    gp_gateways              = export_gp_gateways(vsys_root)
+    ssl_profiles             = export_ssl_profiles(shared_root)
 
     # Device Setup — device-scoped, requires serial at push time
     mgmt_interface, service_settings, service_routes = export_device_setup(root)
@@ -242,6 +248,32 @@ def build_export(
                 f"{len(saml_server_profiles)} SAML server profile(s) exported. "
                 "The referenced certificate object must exist in SCM before the push will succeed. "
                 "Create or import the certificate in SCM first."
+            ),
+        })
+    if gp_portals:
+        warnings.append({
+            "severity": "warn",
+            "object_path": "objects/gp_portals",
+            "message": (
+                f"{len(gp_portals)} GlobalProtect portal(s) exported. Each portal's "
+                "referenced ssl_tls_service_profile must exist in SCM before the push "
+                "will succeed. Create the SSL/TLS service profile in SCM first. Note: "
+                "client-config (agent/app behavior) and satellite-config (site-to-site) "
+                "subtrees are not exported in this pass and must be reconfigured "
+                "manually in SCM after migration."
+            ),
+        })
+    if ssl_profiles:
+        warnings.append({
+            "severity": "warn",
+            "object_path": "objects/ssl_profiles",
+            "message": (
+                f"{len(ssl_profiles)} SSL/TLS service profile(s) exported. "
+                "The referenced certificate object must exist in SCM before the push will succeed. "
+                "Create or import the certificate in SCM first. Cipher suite restriction flags "
+                "(keyxchg-algo-*/enc-algo-*/auth-algo-* under protocol-settings) are not exported — "
+                "the scm-mcp SDK has no SSL/TLS Service Profile model to push them into; "
+                "recreate cipher suite restrictions manually in SCM if needed."
             ),
         })
     if snmp_v2c_server_profiles:
@@ -329,6 +361,21 @@ def build_export(
                 "the equivalent alerting/reporting manually in SCM after migration."
             ),
         })
+    if gp_gateways:
+        warnings.append({
+            "severity": "warn",
+            "object_path": "objects/gp_gateways",
+            "message": (
+                f"{len(gp_gateways)} GlobalProtect gateway(s) exported. The referenced "
+                "ssl_tls_service_profile and remote_user_tunnel (tunnel interface) must "
+                "already exist in SCM before this push will succeed. v1 export scope "
+                "covers name, ssl_tls_service_profile, tunnel_mode, remote_user_tunnel, "
+                "and client_auth entries only — roles, remote-user-tunnel-configs, and "
+                "gp-gw-dhcp (DHCP pool / login-lifetime / per-tunnel auth-override, "
+                "source-address/user, and OS restrictions) are not exported and must be "
+                "configured manually in SCM after migration."
+            ),
+        })
 
     _device_setup_sections = []
     if mgmt_interface:
@@ -405,7 +452,7 @@ def build_export(
                 "Bind each $variable to the real device interface in SCM device management."
             ),
         })
-    for note in loopback_notes + tunnel_notes + vlan_notes + ethernet_notes:
+    for note in loopback_notes + tunnel_notes + vlan_notes + ethernet_notes + aggregate_notes:
         warnings.append({
             "severity": "warn",
             "object_path": "network/interfaces",
@@ -474,6 +521,9 @@ def build_export(
             "saml_server_profiles": saml_server_profiles,
             "tacacs_server_profiles": tacacs_server_profiles,
             "certificates": certificates,
+            "gp_portals": gp_portals,
+            "gp_gateways": gp_gateways,
+            "ssl_profiles": ssl_profiles,
         },
         "policy": {
             "security_rules": security_rules,
@@ -596,7 +646,10 @@ def write_export(data: dict, output_path: str) -> None:
         f"{len(objs.get('ldap_server_profiles',[]))} ldap  "
         f"{len(objs.get('kerberos_server_profiles',[]))} kerberos  "
         f"{len(objs.get('saml_server_profiles',[]))} saml  "
-        f"{len(objs.get('tacacs_server_profiles',[]))} tacacs",
+        f"{len(objs.get('tacacs_server_profiles',[]))} tacacs  "
+        f"{len(objs.get('gp_gateways',[]))} gp_gateways  "
+        f"{len(objs.get('gp_portals',[]))} gp_portals  "
+        f"{len(objs.get('ssl_profiles',[]))} ssl_profiles",
         file=sys.stderr,
     )
     print(
