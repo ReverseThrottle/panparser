@@ -66,6 +66,7 @@ from export.objects import (
     export_device_setup,
     export_high_availability,
     export_botnet_report,
+    export_certificates,
 )
 
 
@@ -196,6 +197,22 @@ def build_export(
 
     # Botnet/C2 traffic report config — reporting/analytics, not pushable to SCM
     botnet_report = export_botnet_report(shared_root)
+
+    # Certificates — public cert material is exported; private-key VALUES are
+    # never read/exported, only their presence is flagged for a warning.
+    certificates, certificates_with_private_key = export_certificates(shared_root)
+    if certificates_with_private_key:
+        warnings.append({
+            "severity": "warn",
+            "object_path": "objects/certificates",
+            "message": (
+                f"{len(certificates_with_private_key)} certificate(s) have a private key "
+                "in the source PAN-OS config. Private key material is never read or "
+                "exported by this tool. These certificates must have their private key "
+                "re-imported into SCM through a secure/manual channel: "
+                + ", ".join(certificates_with_private_key)
+            ),
+        })
 
     # Identity server profiles with encrypted secrets — flag placeholder values
     _secret_profiles = (
@@ -456,6 +473,7 @@ def build_export(
             "kerberos_server_profiles": kerberos_server_profiles,
             "saml_server_profiles": saml_server_profiles,
             "tacacs_server_profiles": tacacs_server_profiles,
+            "certificates": certificates,
         },
         "policy": {
             "security_rules": security_rules,
@@ -579,6 +597,10 @@ def write_export(data: dict, output_path: str) -> None:
         f"{len(objs.get('kerberos_server_profiles',[]))} kerberos  "
         f"{len(objs.get('saml_server_profiles',[]))} saml  "
         f"{len(objs.get('tacacs_server_profiles',[]))} tacacs",
+        file=sys.stderr,
+    )
+    print(
+        f"  certs   : {len(objs.get('certificates',[]))} certificates",
         file=sys.stderr,
     )
     print(

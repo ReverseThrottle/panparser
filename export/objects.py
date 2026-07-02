@@ -2810,3 +2810,69 @@ def export_botnet_report(shared_root) -> dict:
             d["report"] = report
 
     return d
+
+
+def export_certificates(shared_root: Element | None) -> tuple[list[dict], list[str]]:
+    """Export certificates from shared/certificate.
+
+    Mirrors the field selection in parsers/certificates.py::render_certificates().
+
+    SECURITY: PAN-OS certificate entries may carry a <private-key> element.
+    That value must NEVER be read, stored, or exported — the export JSON is a
+    portable artifact with a different trust boundary than PAN-OS's own
+    encrypted config store. We only check whether the element is *present*
+    (entry.find(...) is not None) to flag it for a migration_warning; its
+    text is never accessed. This follows the same "do not carry secret
+    material through export" pattern used for RADIUS/LDAP/TACACS+ secrets.
+
+    Returns (certificates, names_with_private_key) — the second list is used
+    by build_export() to emit a migration_warning listing which certificates
+    need their private key re-imported into SCM through a secure/manual
+    channel.
+    """
+    out: list[dict] = []
+    names_with_private_key: list[str] = []
+    if shared_root is None:
+        return out, names_with_private_key
+    container = shared_root.find("certificate")
+    if container is None:
+        return out, names_with_private_key
+
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        d: dict = {"name": name}
+
+        common_name = entry.findtext("common-name")
+        if common_name:
+            d["common_name"] = common_name
+        issuer = entry.findtext("issuer")
+        if issuer:
+            d["issuer"] = issuer
+        subject = entry.findtext("subject")
+        if subject:
+            d["subject"] = subject
+        not_valid_before = entry.findtext("not-valid-before")
+        if not_valid_before:
+            d["not_valid_before"] = not_valid_before
+        not_valid_after = entry.findtext("not-valid-after")
+        if not_valid_after:
+            d["not_valid_after"] = not_valid_after
+        ca_raw = entry.findtext("ca")
+        if ca_raw is not None:
+            d["ca"] = ca_raw.strip().lower() == "yes"
+        algorithm = entry.findtext("algorithm")
+        if algorithm:
+            d["algorithm"] = algorithm
+        public_key = entry.findtext("public-key")
+        if public_key:
+            d["public_key"] = public_key
+
+        # Do NOT read private-key's value — only detect presence.
+        if entry.find("private-key") is not None:
+            names_with_private_key.append(name)
+
+        out.append(d)
+
+    out.sort(key=lambda x: x["name"].lower())
+    names_with_private_key.sort(key=lambda x: x.lower())
+    return out, names_with_private_key
