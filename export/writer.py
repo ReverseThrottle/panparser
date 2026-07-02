@@ -43,6 +43,7 @@ from export.objects import (
     export_dns_security_profiles,
     export_file_blocking_profiles,
     export_lldp_profiles,
+    export_dhcp_servers,
     export_zone_protection_profiles,
     export_dos_protection_profiles,
     export_dos_protection_rules,
@@ -147,6 +148,7 @@ def build_export(
     ike_gateways          = export_ike_gateways(network_root)
     ipsec_tunnels         = export_ipsec_tunnels(network_root)
     lldp_profiles           = export_lldp_profiles(network_root)
+    dhcp_servers            = export_dhcp_servers(network_root)
     interface_mgmt_profiles = export_interface_management_profiles(network_root)
     monitor_profiles        = export_monitor_profiles(network_root)
     loopback_interfaces, loopback_notes = export_loopback_interfaces(network_root)
@@ -258,6 +260,18 @@ def build_export(
                 "via direct REST API during migration."
             ),
         })
+    if dhcp_servers:
+        warnings.append({
+            "severity": "warn",
+            "object_path": "network/dhcp_servers",
+            "message": (
+                f"{len(dhcp_servers)} DHCP server configuration(s) exported for reference "
+                f"({', '.join(d['interface'] for d in dhcp_servers)}). "
+                "SCM has no native DHCP server object — recreate these settings manually "
+                "(leases, IP pool, reservations, DNS/gateway options) on the target "
+                "device or in SCM device management after migration."
+            ),
+        })
     if botnet_report:
         warnings.append({
             "severity": "warn",
@@ -361,6 +375,7 @@ def build_export(
             "ike_gateways": ike_gateways,
             "ipsec_tunnels": ipsec_tunnels,
             "lldp_profiles": lldp_profiles,
+            "dhcp_servers": dhcp_servers,
             "interface_management_profiles": interface_mgmt_profiles,
             "monitor_profiles": monitor_profiles,
             "interfaces": {
@@ -477,6 +492,7 @@ def write_export(data: dict, output_path: str) -> None:
         f"{len(net.get('ike_gateways', []))} ike_gw  "
         f"{len(net.get('ipsec_tunnels', []))} ipsec_tunnel  "
         f"{len(net.get('lldp_profiles', []))} lldp_profile  "
+        f"{len(net.get('dhcp_servers', []))} dhcp_server  "
         f"{len(ifaces.get('loopback', []))} loopback  "
         f"{len(ifaces.get('tunnel', []))} tunnel  "
         f"{len(ifaces.get('vlan', []))} vlan  "
