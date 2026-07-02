@@ -44,6 +44,7 @@ from export.objects import (
     export_dns_security_profiles,
     export_file_blocking_profiles,
     export_lldp_profiles,
+    export_virtual_wires,
     export_dhcp_servers,
     export_zone_protection_profiles,
     export_dos_protection_profiles,
@@ -150,6 +151,7 @@ def build_export(
     ike_gateways          = export_ike_gateways(network_root)
     ipsec_tunnels         = export_ipsec_tunnels(network_root)
     lldp_profiles           = export_lldp_profiles(network_root)
+    virtual_wires           = export_virtual_wires(network_root)
     qos_profiles            = export_qos_interface_profiles(network_root)
     dhcp_servers            = export_dhcp_servers(network_root)
     interface_mgmt_profiles = export_interface_management_profiles(network_root)
@@ -264,6 +266,17 @@ def build_export(
             "message": (
                 f"{len(lldp_profiles)} LLDP profile(s) exported and will be pushed to SCM "
                 "via direct REST API during migration."
+            ),
+        })
+    if virtual_wires:
+        warnings.append({
+            "severity": "warn",
+            "object_path": "network/virtual_wires",
+            "message": (
+                f"{len(virtual_wires)} virtual wire(s) exported. SCM's folder-scoped API "
+                "does not support creating virtual-wire interface pairings the way this tool "
+                "handles other network objects — configure the vwire pairing manually in SCM "
+                "device management after migration."
             ),
         })
     if qos_profiles:
@@ -404,6 +417,7 @@ def build_export(
             "ike_gateways": ike_gateways,
             "ipsec_tunnels": ipsec_tunnels,
             "lldp_profiles": lldp_profiles,
+            "virtual_wires": virtual_wires,
             "qos_profiles": qos_profiles,
             "dhcp_servers": dhcp_servers,
             "interface_management_profiles": interface_mgmt_profiles,
@@ -525,6 +539,7 @@ def write_export(data: dict, output_path: str) -> None:
         f"{len(net.get('ike_gateways', []))} ike_gw  "
         f"{len(net.get('ipsec_tunnels', []))} ipsec_tunnel  "
         f"{len(net.get('lldp_profiles', []))} lldp_profile  "
+        f"{len(net.get('virtual_wires', []))} virtual_wire  "
         f"{len(net.get('qos_profiles', []))} qos_profile  "
         f"{len(net.get('dhcp_servers', []))} dhcp_server  "
         f"{len(ifaces.get('loopback', []))} loopback  "
