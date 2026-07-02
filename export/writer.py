@@ -63,6 +63,7 @@ from export.objects import (
     export_kerberos_server_profiles,
     export_saml_server_profiles,
     export_tacacs_server_profiles,
+    export_ssl_profiles,
     export_device_setup,
     export_high_availability,
     export_botnet_report,
@@ -187,6 +188,7 @@ def build_export(
     kerberos_server_profiles = export_kerberos_server_profiles(vsys_root)
     saml_server_profiles     = export_saml_server_profiles(vsys_root)
     tacacs_server_profiles   = export_tacacs_server_profiles(vsys_root)
+    ssl_profiles             = export_ssl_profiles(shared_root)
 
     # Device Setup — device-scoped, requires serial at push time
     mgmt_interface, service_settings, service_routes = export_device_setup(root)
@@ -225,6 +227,19 @@ def build_export(
                 f"{len(saml_server_profiles)} SAML server profile(s) exported. "
                 "The referenced certificate object must exist in SCM before the push will succeed. "
                 "Create or import the certificate in SCM first."
+            ),
+        })
+    if ssl_profiles:
+        warnings.append({
+            "severity": "warn",
+            "object_path": "objects/ssl_profiles",
+            "message": (
+                f"{len(ssl_profiles)} SSL/TLS service profile(s) exported. "
+                "The referenced certificate object must exist in SCM before the push will succeed. "
+                "Create or import the certificate in SCM first. Cipher suite restriction flags "
+                "(keyxchg-algo-*/enc-algo-*/auth-algo-* under protocol-settings) are not exported — "
+                "the scm-mcp SDK has no SSL/TLS Service Profile model to push them into; "
+                "recreate cipher suite restrictions manually in SCM if needed."
             ),
         })
     if snmp_v2c_server_profiles:
@@ -456,6 +471,7 @@ def build_export(
             "kerberos_server_profiles": kerberos_server_profiles,
             "saml_server_profiles": saml_server_profiles,
             "tacacs_server_profiles": tacacs_server_profiles,
+            "ssl_profiles": ssl_profiles,
         },
         "policy": {
             "security_rules": security_rules,
@@ -578,7 +594,8 @@ def write_export(data: dict, output_path: str) -> None:
         f"{len(objs.get('ldap_server_profiles',[]))} ldap  "
         f"{len(objs.get('kerberos_server_profiles',[]))} kerberos  "
         f"{len(objs.get('saml_server_profiles',[]))} saml  "
-        f"{len(objs.get('tacacs_server_profiles',[]))} tacacs",
+        f"{len(objs.get('tacacs_server_profiles',[]))} tacacs  "
+        f"{len(objs.get('ssl_profiles',[]))} ssl_profiles",
         file=sys.stderr,
     )
     print(

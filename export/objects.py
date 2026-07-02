@@ -2385,6 +2385,50 @@ def export_saml_server_profiles(vsys_root) -> list[dict]:
     return out
 
 
+def export_ssl_profiles(shared_root) -> list[dict]:
+    """Export SSL/TLS Service Profiles from shared/ssl-tls-service-profile.
+
+    Mirrors what the TUI already surfaces (parsers/ssl_profiles.py::render_ssl_profiles()):
+    name, certificate, min_version, and max_version. The certificate is a reference by
+    name only — the caller is expected to surface a migration_warning since the
+    referenced certificate object must exist in SCM before the push will succeed
+    (same pattern as export_saml_server_profiles()).
+
+    Known limitation — cipher suite flags intentionally out of scope: PAN-OS also
+    carries per-profile cipher suite restriction flags under protocol-settings
+    (keyxchg-algo-*, enc-algo-*, auth-algo-*). Checked the scm-mcp SDK
+    (scm.models.security.decryption_profiles.SSLProtocolSettings) — it supports
+    exactly this set of boolean flags, but only for Decryption Profiles. As of this
+    SDK version there is no SSL/TLS Service Profile model at all, so there is no
+    supported field to push these flags into for this object type. They are left out
+    here as a documented limitation rather than silently dropped; recreate cipher
+    suite restrictions manually in SCM after migration if they matter for a profile.
+    """
+    out = []
+    if shared_root is None:
+        return out
+    container = shared_root.find("ssl-tls-service-profile")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        if not name:
+            continue
+        d: dict = {"name": name}
+        certificate = entry.findtext("certificate") or ""
+        if certificate:
+            d["certificate"] = certificate
+        min_ver = entry.findtext("protocol-settings/min-version") or ""
+        if min_ver:
+            d["min_version"] = min_ver
+        max_ver = entry.findtext("protocol-settings/max-version") or ""
+        if max_ver:
+            d["max_version"] = max_ver
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
 _DEVICE_SYSTEM_PATH = "devices/entry/deviceconfig/system"
 
 
