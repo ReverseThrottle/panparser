@@ -17,6 +17,7 @@ from parsers.services import render_services, render_service_groups
 from parsers.security import render_security_rules
 from parsers.nat import render_nat_rules
 from parsers.zones import render_zones
+from parsers.virtual_wire import render_virtual_wires
 from parsers.interfaces import render_interfaces
 from parsers.routing import render_routing
 from parsers.tags import render_tags
@@ -52,6 +53,7 @@ SECTIONS = [
     "nat-rules",
     "dos-rules",
     "zones",
+    "virtual-wires",
     "interfaces",
     "routing",
     "tags",
@@ -238,6 +240,8 @@ def main() -> None:
                                    render_dos_rules(vsys_root, console, grep)),
         "zones":          lambda: (section_header(console, "Security Zones"),
                                    render_zones(network_root, console, grep)),
+        "virtual-wires":  lambda: (section_header(console, "Virtual Wires"),
+                                   render_virtual_wires(network_root, console, grep)),
         "interfaces":     lambda: (section_header(console, "Interfaces"),
                                    render_interfaces(network_root, console, grep)),
         "routing":        lambda: (section_header(console, "Static Routes"),

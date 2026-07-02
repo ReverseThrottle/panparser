@@ -1335,6 +1335,34 @@ def export_lldp_profiles(network_root) -> list[dict]:
     return out
 
 
+def export_virtual_wires(network_root) -> list[dict]:
+    """Export virtual wire pairings from network/virtual-wire."""
+    out = []
+    if network_root is None:
+        return out
+    container = network_root.find("virtual-wire")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        d: dict = {"name": name}
+        iface1 = entry.findtext("interface1")
+        if iface1:
+            d["interface1"] = iface1
+        iface2 = entry.findtext("interface2")
+        if iface2:
+            d["interface2"] = iface2
+        tag_allowed = entry.findtext("tag-allowed")
+        if tag_allowed:
+            d["tag_allowed"] = tag_allowed
+        multi_vlan = entry.findtext("multi-vlan")
+        if multi_vlan is not None:
+            d["multi_vlan"] = multi_vlan.lower() == "yes"
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
 def _parse_flood_proto(el: Element) -> dict:
     """Parse a single flood protocol element (tcp-syn, udp, icmp, icmpv6, other-ip)."""
     out: dict = {}

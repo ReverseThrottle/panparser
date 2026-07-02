@@ -41,6 +41,7 @@ from export.objects import (
     export_dns_security_profiles,
     export_file_blocking_profiles,
     export_lldp_profiles,
+    export_virtual_wires,
     export_zone_protection_profiles,
     export_dos_protection_profiles,
     export_dos_protection_rules,
@@ -143,6 +144,7 @@ def build_export(
     ike_gateways          = export_ike_gateways(network_root)
     ipsec_tunnels         = export_ipsec_tunnels(network_root)
     lldp_profiles           = export_lldp_profiles(network_root)
+    virtual_wires           = export_virtual_wires(network_root)
     interface_mgmt_profiles = export_interface_management_profiles(network_root)
     loopback_interfaces, loopback_notes = export_loopback_interfaces(network_root)
     tunnel_interfaces, tunnel_notes     = export_tunnel_interfaces(network_root)
@@ -250,6 +252,17 @@ def build_export(
                 "via direct REST API during migration."
             ),
         })
+    if virtual_wires:
+        warnings.append({
+            "severity": "warn",
+            "object_path": "network/virtual_wires",
+            "message": (
+                f"{len(virtual_wires)} virtual wire(s) exported. SCM's folder-scoped API "
+                "does not support creating virtual-wire interface pairings the way this tool "
+                "handles other network objects — configure the vwire pairing manually in SCM "
+                "device management after migration."
+            ),
+        })
 
     _device_setup_sections = []
     if mgmt_interface:
@@ -341,6 +354,7 @@ def build_export(
             "ike_gateways": ike_gateways,
             "ipsec_tunnels": ipsec_tunnels,
             "lldp_profiles": lldp_profiles,
+            "virtual_wires": virtual_wires,
             "interface_management_profiles": interface_mgmt_profiles,
             "interfaces": {
                 "loopback": loopback_interfaces,
@@ -451,6 +465,7 @@ def write_export(data: dict, output_path: str) -> None:
         f"{len(net.get('ike_gateways', []))} ike_gw  "
         f"{len(net.get('ipsec_tunnels', []))} ipsec_tunnel  "
         f"{len(net.get('lldp_profiles', []))} lldp_profile  "
+        f"{len(net.get('virtual_wires', []))} virtual_wire  "
         f"{len(ifaces.get('loopback', []))} loopback  "
         f"{len(ifaces.get('tunnel', []))} tunnel  "
         f"{len(ifaces.get('vlan', []))} vlan  "
