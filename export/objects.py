@@ -367,6 +367,84 @@ def _extract_destination_translation(rule: Element) -> dict | None:
     return d if d else None
 
 
+def _extract_gp_client_auth(container: Element) -> list[dict]:
+    """Extract portal-config/client-auth/entry into flat dicts.
+
+    Structure is a flat set of scalar fields per entry (confirmed against
+    440-config.xml and uas-config.xml), so full fidelity is straightforward
+    unlike client-config/satellite-config.
+    """
+    out = []
+    for ca in container.findall("entry"):
+        d: dict = {"name": ca.get("name", "")}
+        for scm_key, xml_tag, is_bool in (
+            ("user_credential_or_client_cert_required",
+             "user-credential-or-client-cert-required", True),
+            ("os", "os", False),
+            ("authentication_profile", "authentication-profile", False),
+            ("authentication_message", "authentication-message", False),
+            ("auto_retrieve_passcode", "auto-retrieve-passcode", True),
+            ("use_default_browser", "use-default-browser", True),
+            ("username_label", "username-label", False),
+            ("password_label", "password-label", False),
+        ):
+            val = ca.findtext(xml_tag)
+            if val is not None:
+                d[scm_key] = (val.lower() == "yes") if is_bool else val
+        out.append(d)
+    return out
+
+
+def export_gp_portals(vsys_root) -> list[dict]:
+    """Export GlobalProtect portals from vsys/global-protect/global-protect-portal.
+
+    v1 scope mirrors the existing TUI renderer (render_gp_portals in
+    parsers/globalprotect.py), which has already been vetted against real
+    data in 440-config.xml and uas-config.xml: `name`, `local_address`
+    (portal-config/local-address/ip/ipv4), `ssl_tls_service_profile`
+    (portal-config/ssl-tls-service-profile), and the portal-config/client-auth
+    entries (a flat structure, so full fields are extracted rather than just
+    a count).
+
+    Known limitations (intentionally NOT parsed in this pass):
+      - `client-config` — GlobalProtect agent/app behavior config (gateway
+        assignment lists, HIP collection, agent UI, root CA, gp-app-config
+        key/value settings, etc.). This is a very deep, agent-behavior-shaped
+        construct with no direct SCM object mapping today.
+      - `satellite-config` — GlobalProtect satellite (site-to-site) settings,
+        e.g. client-certificate. Also out of scope for this pass.
+    Both sections are present in both real configs checked into this repo
+    (440-config.xml, uas-config.xml) and are simply omitted from the export
+    rather than silently dropped without comment — see issue #45 for tracking.
+    """
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("global-protect/global-protect-portal")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        d: dict = {"name": name}
+        local_addr = entry.findtext("portal-config/local-address/ip/ipv4")
+        if local_addr:
+            d["local_address"] = local_addr
+        ssl_profile = entry.findtext("portal-config/ssl-tls-service-profile")
+        if ssl_profile:
+            d["ssl_tls_service_profile"] = ssl_profile
+        client_auth_container = entry.find("portal-config/client-auth")
+        client_auth = (
+            _extract_gp_client_auth(client_auth_container)
+            if client_auth_container is not None
+            else []
+        )
+        d["client_auth"] = client_auth
+        d["client_auth_count"] = len(client_auth)
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
 def export_ike_crypto_profiles(network_root: Element | None) -> list[dict]:
     if network_root is None:
         return []

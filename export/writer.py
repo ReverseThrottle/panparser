@@ -17,6 +17,7 @@ from export.objects import (
     export_application_groups,
     export_url_categories,
     export_zones,
+    export_gp_portals,
     export_security_rules,
     export_nat_rules,
     export_decryption_rules,
@@ -138,6 +139,7 @@ def build_export(
     url_categories     = [c for c in export_url_categories(vsys_root, shared_root)
                           if c.get("list")]   # skip empty URL lists — invalid in SCM
     zones              = export_zones(vsys_root)
+    gp_portals         = export_gp_portals(vsys_root)
     security_rules     = export_security_rules(vsys_root)
     nat_rules          = export_nat_rules(vsys_root)
     decryption_rules   = export_decryption_rules(vsys_root)
@@ -225,6 +227,19 @@ def build_export(
                 f"{len(saml_server_profiles)} SAML server profile(s) exported. "
                 "The referenced certificate object must exist in SCM before the push will succeed. "
                 "Create or import the certificate in SCM first."
+            ),
+        })
+    if gp_portals:
+        warnings.append({
+            "severity": "warn",
+            "object_path": "objects/gp_portals",
+            "message": (
+                f"{len(gp_portals)} GlobalProtect portal(s) exported. Each portal's "
+                "referenced ssl_tls_service_profile must exist in SCM before the push "
+                "will succeed. Create the SSL/TLS service profile in SCM first. Note: "
+                "client-config (agent/app behavior) and satellite-config (site-to-site) "
+                "subtrees are not exported in this pass and must be reconfigured "
+                "manually in SCM after migration."
             ),
         })
     if snmp_v2c_server_profiles:
@@ -456,6 +471,7 @@ def build_export(
             "kerberos_server_profiles": kerberos_server_profiles,
             "saml_server_profiles": saml_server_profiles,
             "tacacs_server_profiles": tacacs_server_profiles,
+            "gp_portals": gp_portals,
         },
         "policy": {
             "security_rules": security_rules,
