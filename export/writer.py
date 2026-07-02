@@ -25,10 +25,12 @@ from export.objects import (
     export_qos_rules,
     export_qos_interface_profiles,
     export_ike_crypto_profiles,
+    export_gp_app_crypto_profiles,
     export_ipsec_crypto_profiles,
     export_ike_gateways,
     export_ipsec_tunnels,
     export_interface_management_profiles,
+    export_monitor_profiles,
     export_loopback_interfaces,
     export_tunnel_interfaces,
     export_vlan_interfaces,
@@ -42,6 +44,7 @@ from export.objects import (
     export_dns_security_profiles,
     export_file_blocking_profiles,
     export_lldp_profiles,
+    export_dhcp_servers,
     export_zone_protection_profiles,
     export_dos_protection_profiles,
     export_dos_protection_rules,
@@ -60,6 +63,8 @@ from export.objects import (
     export_saml_server_profiles,
     export_tacacs_server_profiles,
     export_device_setup,
+    export_high_availability,
+    export_botnet_report,
 )
 
 
@@ -140,16 +145,19 @@ def build_export(
     qos_rules          = export_qos_rules(vsys_root)
 
     ike_crypto_profiles   = export_ike_crypto_profiles(network_root)
+    gp_app_crypto_profiles = export_gp_app_crypto_profiles(network_root)
     ipsec_crypto_profiles = export_ipsec_crypto_profiles(network_root)
     ike_gateways          = export_ike_gateways(network_root)
     ipsec_tunnels         = export_ipsec_tunnels(network_root)
     lldp_profiles           = export_lldp_profiles(network_root)
     qos_profiles            = export_qos_interface_profiles(network_root)
+    dhcp_servers            = export_dhcp_servers(network_root)
     interface_mgmt_profiles = export_interface_management_profiles(network_root)
+    monitor_profiles        = export_monitor_profiles(network_root)
     loopback_interfaces, loopback_notes = export_loopback_interfaces(network_root)
     tunnel_interfaces, tunnel_notes     = export_tunnel_interfaces(network_root)
     vlan_interfaces, vlan_notes         = export_vlan_interfaces(network_root)
-    ethernet_parents, ethernet_subinterfaces = export_ethernet_interfaces(network_root)
+    ethernet_parents, ethernet_subinterfaces, ethernet_notes = export_ethernet_interfaces(network_root)
     aggregate_parents, aggregate_subinterfaces = export_aggregate_interfaces(network_root)
 
     anti_spyware_profiles           = export_anti_spyware_profiles(vsys_root)
@@ -180,6 +188,12 @@ def build_export(
 
     # Device Setup — device-scoped, requires serial at push time
     mgmt_interface, service_settings, service_routes = export_device_setup(root)
+
+    # High Availability — device-scoped, no SCM push path for HA pairing
+    high_availability = export_high_availability(root)
+
+    # Botnet/C2 traffic report config — reporting/analytics, not pushable to SCM
+    botnet_report = export_botnet_report(shared_root)
 
     # Identity server profiles with encrypted secrets — flag placeholder values
     _secret_profiles = (
@@ -262,6 +276,29 @@ def build_export(
                 "to SCM via direct REST API during migration."
             ),
         })
+    if dhcp_servers:
+        warnings.append({
+            "severity": "warn",
+            "object_path": "network/dhcp_servers",
+            "message": (
+                f"{len(dhcp_servers)} DHCP server configuration(s) exported for reference "
+                f"({', '.join(d['interface'] for d in dhcp_servers)}). "
+                "SCM has no native DHCP server object — recreate these settings manually "
+                "(leases, IP pool, reservations, DNS/gateway options) on the target "
+                "device or in SCM device management after migration."
+            ),
+        })
+    if botnet_report:
+        warnings.append({
+            "severity": "warn",
+            "object_path": "shared/botnet_report",
+            "message": (
+                "Botnet/C2 traffic report configuration (Monitor > PDF Reports > Botnet) "
+                "exported for reference only. SCM/Strata Logging Service has no direct "
+                "equivalent object for these thresholds and report settings — recreate "
+                "the equivalent alerting/reporting manually in SCM after migration."
+            ),
+        })
 
     _device_setup_sections = []
     if mgmt_interface:
@@ -279,6 +316,19 @@ def build_export(
                 "These are device-scoped and cannot be pushed without a device serial number. "
                 "Pass device_serial to scm_migrate_panparser_export to push them, "
                 "or configure manually in SCM Device Management."
+            ),
+        })
+
+    if high_availability:
+        _ha_group = high_availability.get("group_id", "?")
+        _ha_peer = high_availability.get("peer_ip", "unknown peer")
+        warnings.append({
+            "severity": "warn",
+            "object_path": "high_availability",
+            "message": (
+                f"High Availability is enabled on the source device (group {_ha_group}, "
+                f"peer {_ha_peer}). SCM/folder-scoped migration has no path to push HA "
+                "pairing — HA must be reconfigured manually on the destination."
             ),
         })
 
@@ -325,7 +375,7 @@ def build_export(
                 "Bind each $variable to the real device interface in SCM device management."
             ),
         })
-    for note in loopback_notes + tunnel_notes + vlan_notes:
+    for note in loopback_notes + tunnel_notes + vlan_notes + ethernet_notes:
         warnings.append({
             "severity": "warn",
             "object_path": "network/interfaces",
@@ -349,12 +399,15 @@ def build_export(
         "network": {
             "virtual_routers": virtual_routers,
             "ike_crypto_profiles": ike_crypto_profiles,
+            "gp_app_crypto_profiles": gp_app_crypto_profiles,
             "ipsec_crypto_profiles": ipsec_crypto_profiles,
             "ike_gateways": ike_gateways,
             "ipsec_tunnels": ipsec_tunnels,
             "lldp_profiles": lldp_profiles,
             "qos_profiles": qos_profiles,
+            "dhcp_servers": dhcp_servers,
             "interface_management_profiles": interface_mgmt_profiles,
+            "monitor_profiles": monitor_profiles,
             "interfaces": {
                 "loopback": loopback_interfaces,
                 "tunnel": tunnel_interfaces,
@@ -420,6 +473,11 @@ def build_export(
             "service_routes": service_routes,
         }
 
+    if high_availability:
+        data["high_availability"] = high_availability
+    if botnet_report:
+        data["shared"] = {"botnet_report": botnet_report}
+
     # Apply trailing-underscore normalization across all names and references
     if rename_map:
         data = _apply_renames(data, rename_map)
@@ -449,6 +507,8 @@ def write_export(data: dict, output_path: str) -> None:
     vrs  = data.get("network", {}).get("virtual_routers", [])
     warns = data.get("migration_warnings", [])
     dev_setup = data.get("device_setup", {})
+    ha = data.get("high_availability", {})
+    shared = data.get("shared", {})
 
     print(
         f"Exported to {output_path}  "
@@ -460,11 +520,13 @@ def write_export(data: dict, output_path: str) -> None:
     print(
         f"  network : {len(vrs)} virtual_router(s)  "
         f"{len(net.get('ike_crypto_profiles', []))} ike_crypto  "
+        f"{len(net.get('gp_app_crypto_profiles', []))} gp_app_crypto  "
         f"{len(net.get('ipsec_crypto_profiles', []))} ipsec_crypto  "
         f"{len(net.get('ike_gateways', []))} ike_gw  "
         f"{len(net.get('ipsec_tunnels', []))} ipsec_tunnel  "
         f"{len(net.get('lldp_profiles', []))} lldp_profile  "
         f"{len(net.get('qos_profiles', []))} qos_profile  "
+        f"{len(net.get('dhcp_servers', []))} dhcp_server  "
         f"{len(ifaces.get('loopback', []))} loopback  "
         f"{len(ifaces.get('tunnel', []))} tunnel  "
         f"{len(ifaces.get('vlan', []))} vlan  "
@@ -540,6 +602,17 @@ def write_export(data: dict, output_path: str) -> None:
     if ds_parts:
         print(
             f"  device  : {' | '.join(ds_parts)}  (device-scoped — needs device_serial to push)",
+            file=sys.stderr,
+        )
+    if ha:
+        print(
+            f"  ha      : group {ha.get('group_id', '?')}  mode {ha.get('mode', '?')}  "
+            f"peer {ha.get('peer_ip', '?')}  (must be reconfigured manually — no SCM push path)",
+            file=sys.stderr,
+        )
+    if shared.get("botnet_report"):
+        print(
+            "  shared  : botnet_report present  (reference only — no SCM equivalent object)",
             file=sys.stderr,
         )
     if warns:
