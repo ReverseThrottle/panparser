@@ -204,7 +204,13 @@ def test_fully_matching_export_has_no_interface_member_warnings():
         "interfaces": expected_interfaces,
     }]
     assert data["network"]["virtual_routers"][0]["interfaces"] == expected_interfaces
-    assert not any(
-        warning["object_path"] in {"zones/trust", "network/virtual_routers/Internal"}
-        for warning in data["migration_warnings"]
-    )
+    assert data["migration_warnings"] == [{
+        "severity": "info",
+        "object_path": "network/interfaces",
+        "message": (
+            "3 interface(s) exported as SCM $variable templates "
+            "(1 ethernet + 1 eth-subs, 1 aggregate + 0 ae-subs, "
+            "0 loopback, 0 tunnel, 0 vlan). Bind each $variable to the real "
+            "device interface in SCM device management."
+        ),
+    }]
