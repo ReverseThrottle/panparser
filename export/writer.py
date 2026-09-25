@@ -108,6 +108,72 @@ def _apply_renames(data: dict, rename_map: dict[str, str]) -> dict:
     return fix(data)
 
 
+def _reconcile_interface_members(
+    owners: list[dict],
+    known_interfaces: set[str],
+    normalized_bare_interfaces: set[str],
+    owner_type: str,
+    object_path_prefix: str,
+) -> list[dict]:
+    """Validate zone/VR members against interfaces produced by the exporter."""
+    warnings = []
+    for owner in owners:
+        if "interfaces" not in owner:
+            continue
+
+        owner_name = owner["name"]
+        reconciled = []
+        for interface_name in owner["interfaces"]:
+            if (
+                interface_name in known_interfaces
+                or interface_name == "vlan"
+            ):
+                reconciled.append(interface_name)
+                continue
+
+            object_path = f"{object_path_prefix}/{owner_name}"
+            if interface_name in normalized_bare_interfaces:
+                normalized_name = f"{interface_name}.1"
+                reconciled.append(normalized_name)
+                warnings.append({
+                    "severity": "info",
+                    "object_path": object_path,
+                    "message": (
+                        f"Rewrote normalized bare parent interface member "
+                        f"'{interface_name}' to '{normalized_name}' on {owner_type} "
+                        f"'{owner_name}' so it references the exported interface."
+                    ),
+                })
+                continue
+
+            if interface_name in {"tunnel", "loopback"}:
+                warnings.append({
+                    "severity": "warn",
+                    "object_path": object_path,
+                    "message": (
+                        f"Dropped bare parent interface member '{interface_name}' from "
+                        f"{owner_type} '{owner_name}' because no corresponding interface "
+                        "was exported."
+                    ),
+                })
+                continue
+
+            reconciled.append(interface_name)
+            warnings.append({
+                "severity": "warn",
+                "object_path": object_path,
+                "message": (
+                    f"Kept interface member '{interface_name}' on {owner_type} "
+                    f"'{owner_name}', but it doesn't match any exported interface; "
+                    "verify it manually."
+                ),
+            })
+
+        owner["interfaces"] = reconciled
+
+    return warnings
+
+
 def build_export(
     root: Element,
     vsys_root: Element | None,
@@ -166,6 +232,41 @@ def build_export(
     vlan_interfaces, vlan_notes         = export_vlan_interfaces(network_root)
     ethernet_parents, ethernet_subinterfaces, ethernet_notes = export_ethernet_interfaces(network_root)
     aggregate_parents, aggregate_subinterfaces, aggregate_notes = export_aggregate_interfaces(network_root)
+
+    interface_groups = (
+        loopback_interfaces,
+        tunnel_interfaces,
+        vlan_interfaces,
+        ethernet_parents,
+        ethernet_subinterfaces,
+        aggregate_parents,
+        aggregate_subinterfaces,
+    )
+    known_interfaces = {
+        interface["name"]
+        for interface_group in interface_groups
+        for interface in interface_group
+    }
+    normalized_bare_interfaces = set()
+    if any(note.startswith("Bare 'loopback' parent interface") for note in loopback_notes):
+        normalized_bare_interfaces.add("loopback")
+    if any(note.startswith("Bare 'tunnel' parent interface") for note in tunnel_notes):
+        normalized_bare_interfaces.add("tunnel")
+
+    warnings.extend(_reconcile_interface_members(
+        zones,
+        known_interfaces,
+        normalized_bare_interfaces,
+        "zone",
+        "zones",
+    ))
+    warnings.extend(_reconcile_interface_members(
+        virtual_routers,
+        known_interfaces,
+        normalized_bare_interfaces,
+        "virtual router",
+        "network/virtual_routers",
+    ))
 
     anti_spyware_profiles           = export_anti_spyware_profiles(vsys_root)
     wildfire_antivirus_profiles     = export_wildfire_antivirus_profiles(vsys_root)
