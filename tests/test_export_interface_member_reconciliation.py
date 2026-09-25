@@ -71,15 +71,19 @@ def test_bare_tunnel_is_dropped_when_numbered_sibling_exists():
     assert "Dropped bare parent" in warnings[0]["message"]
 
 
-def test_normalized_bare_tunnel_is_kept_without_warning():
+def test_normalized_bare_tunnel_is_rewritten_with_info_warning():
     interfaces, warnings = _reconcile(
         ["tunnel"],
         {"tunnel.1"},
         {"tunnel"},
     )
 
-    assert interfaces == ["tunnel"]
-    assert warnings == []
+    assert interfaces == ["tunnel.1"]
+    assert len(warnings) == 1
+    assert warnings[0]["severity"] == "info"
+    assert "Rewrote normalized bare parent" in warnings[0]["message"]
+    assert "'tunnel'" in warnings[0]["message"]
+    assert "'tunnel.1'" in warnings[0]["message"]
 
 
 def test_bare_vlan_is_untouched_without_new_warning():
@@ -157,6 +161,54 @@ def test_eafb_style_export_drops_only_stale_bare_tunnel_members():
         "network/virtual_routers/Internal",
     ]
     assert all("'tunnel'" in warning["message"] for warning in drop_warnings)
+
+
+def test_normalized_bare_parents_are_rewritten_in_zone_and_virtual_router():
+    member_xml = """
+      <member>tunnel</member>
+      <member>loopback</member>
+      <member>vlan</member>
+    """
+    data = _build_export(
+        f"""
+        <zone>
+          <entry name="trust">
+            <network><layer3>{member_xml}</layer3></network>
+          </entry>
+        </zone>
+        """,
+        f"""
+        <interface>
+          <tunnel><ip><entry name="192.0.2.1/32"/></ip></tunnel>
+          <loopback><ip><entry name="198.51.100.1/32"/></ip></loopback>
+        </interface>
+        <virtual-router>
+          <entry name="Internal">
+            <interface>{member_xml}</interface>
+          </entry>
+        </virtual-router>
+        """,
+    )
+
+    expected_interfaces = ["tunnel.1", "loopback.1", "vlan"]
+    assert data["zones"][0]["interfaces"] == expected_interfaces
+    assert data["network"]["virtual_routers"][0]["interfaces"] == expected_interfaces
+
+    rewrite_warnings = [
+        warning
+        for warning in data["migration_warnings"]
+        if "Rewrote normalized bare parent" in warning["message"]
+    ]
+    assert len(rewrite_warnings) == 4
+    assert all(warning["severity"] == "info" for warning in rewrite_warnings)
+    assert {warning["object_path"] for warning in rewrite_warnings} == {
+        "zones/trust",
+        "network/virtual_routers/Internal",
+    }
+    assert not any(
+        "Rewrote normalized bare parent interface member 'vlan'" in warning["message"]
+        for warning in data["migration_warnings"]
+    )
 
 
 def test_fully_matching_export_has_no_interface_member_warnings():

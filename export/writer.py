@@ -126,13 +126,26 @@ def _reconcile_interface_members(
         for interface_name in owner["interfaces"]:
             if (
                 interface_name in known_interfaces
-                or interface_name in normalized_bare_interfaces
                 or interface_name == "vlan"
             ):
                 reconciled.append(interface_name)
                 continue
 
             object_path = f"{object_path_prefix}/{owner_name}"
+            if interface_name in normalized_bare_interfaces:
+                normalized_name = f"{interface_name}.1"
+                reconciled.append(normalized_name)
+                warnings.append({
+                    "severity": "info",
+                    "object_path": object_path,
+                    "message": (
+                        f"Rewrote normalized bare parent interface member "
+                        f"'{interface_name}' to '{normalized_name}' on {owner_type} "
+                        f"'{owner_name}' so it references the exported interface."
+                    ),
+                })
+                continue
+
             if interface_name in {"tunnel", "loopback"}:
                 warnings.append({
                     "severity": "warn",
