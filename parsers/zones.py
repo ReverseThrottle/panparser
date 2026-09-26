@@ -10,7 +10,7 @@ ZONE_TYPE_COLORS = {
 }
 
 
-def render_zones(network_root: Element | None, console, grep: str | None = None) -> None:
+def render_zones(vsys_root: Element | None, console, grep: str | None = None) -> None:
     table = Table(title="Security Zones", box=box.ROUNDED, show_lines=True,
                   header_style="bold cyan")
     table.add_column("Name", style="bold")
@@ -19,11 +19,11 @@ def render_zones(network_root: Element | None, console, grep: str | None = None)
     table.add_column("Zone Protection Profile", style="dim")
     table.add_column("Log Setting", style="dim")
 
-    if network_root is None:
-        console.print("[dim]No network configuration found.[/dim]")
+    if vsys_root is None:
+        console.print("[dim]No vsys configuration found.[/dim]")
         return
 
-    zone_container = network_root.find("zone")
+    zone_container = vsys_root.find("zone")
     if zone_container is None:
         console.print("[dim]No zones found.[/dim]")
         return
