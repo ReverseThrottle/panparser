@@ -245,7 +245,7 @@ def main() -> None:
         "dos-rules":      lambda: (section_header(console, "DoS Protection Rules"),
                                    render_dos_rules(vsys_root, console, grep)),
         "zones":          lambda: (section_header(console, "Security Zones"),
-                                   render_zones(network_root, console, grep)),
+                                   render_zones(vsys_root, console, grep)),
         "virtual-wires":  lambda: (section_header(console, "Virtual Wires"),
                                    render_virtual_wires(network_root, console, grep)),
         "interfaces":     lambda: (section_header(console, "Interfaces"),
