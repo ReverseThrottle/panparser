@@ -55,7 +55,7 @@ def render_routing(network_root: Element | None, console, grep: str | None = Non
 def _extract_nexthop(route: Element) -> tuple[str, str]:
     nh = route.find("nexthop")
     if nh is None:
-        return "", ""
+        return "", route.findtext("interface") or ""
     ip_addr = nh.findtext("ip-address")
     if ip_addr:
         return ip_addr, route.findtext("interface") or ""
