@@ -898,13 +898,7 @@ def export_ethernet_interfaces(
             parent["layer3"] = layer3_d
 
             for unit in layer3.findall("units/entry"):
-                sub: dict = {"name": unit.get("name", ""), "parent_interface": name}
-                tag = unit.findtext("tag")
-                if tag:
-                    sub["tag"] = int(tag)
-                sub_comment = unit.findtext("comment")
-                if sub_comment:
-                    sub["comment"] = sub_comment
+                sub = _export_unit_base(unit, name)
                 mtu = unit.findtext("mtu")
                 if mtu:
                     sub["mtu"] = int(mtu)
@@ -965,17 +959,19 @@ def _export_layer2_units(layer2: Element, parent_name: str) -> list[dict]:
     L2 units carry no IP or management profile, so only the VLAN tag and
     comment are exported.
     """
-    units: list[dict] = []
-    for unit in layer2.findall("units/entry"):
-        sub: dict = {"name": unit.get("name", ""), "parent_interface": parent_name}
-        tag = unit.findtext("tag")
-        if tag:
-            sub["tag"] = int(tag)
-        sub_comment = unit.findtext("comment")
-        if sub_comment:
-            sub["comment"] = sub_comment
-        units.append(sub)
-    return units
+    return [_export_unit_base(unit, parent_name) for unit in layer2.findall("units/entry")]
+
+
+def _export_unit_base(unit: Element, parent_name: str) -> dict:
+    """Return the {name, parent_interface, tag, comment} fields shared by L2 and L3 units."""
+    sub: dict = {"name": unit.get("name", ""), "parent_interface": parent_name}
+    tag = unit.findtext("tag")
+    if tag:
+        sub["tag"] = int(tag)
+    sub_comment = unit.findtext("comment")
+    if sub_comment:
+        sub["comment"] = sub_comment
+    return sub
 
 
 def _export_dhcp_client(layer3: Element) -> dict | None:
@@ -1051,13 +1047,7 @@ def export_aggregate_interfaces(
             parent["layer3"] = layer3_d
 
             for unit in layer3.findall("units/entry"):
-                sub: dict = {"name": unit.get("name", ""), "parent_interface": name}
-                tag = unit.findtext("tag")
-                if tag:
-                    sub["tag"] = int(tag)
-                sub_comment = unit.findtext("comment")
-                if sub_comment:
-                    sub["comment"] = sub_comment
+                sub = _export_unit_base(unit, name)
                 mtu = unit.findtext("mtu")
                 if mtu:
                     sub["mtu"] = int(mtu)
