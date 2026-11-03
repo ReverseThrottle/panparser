@@ -266,3 +266,61 @@ def test_fully_matching_export_has_no_interface_member_warnings():
             "device interface in SCM device management."
         ),
     }]
+
+
+def test_normalized_bare_vlan_is_rewritten_to_vlan_1():
+    interfaces, warnings = _reconcile(["vlan"], set(), {"vlan"})
+
+    assert interfaces == ["vlan.1"]
+    assert len(warnings) == 1
+    assert warnings[0]["severity"] == "info"
+    assert "'vlan'" in warnings[0]["message"]
+    assert "'vlan.1'" in warnings[0]["message"]
+
+
+def _bare_vlan_export(vlan_xml: str) -> dict:
+    member_xml = "<member>vlan</member>"
+    return _build_export(
+        f"""
+        <zone>
+          <entry name="trust">
+            <network><layer3>{member_xml}</layer3></network>
+          </entry>
+        </zone>
+        """,
+        f"""
+        <interface>{vlan_xml}</interface>
+        <virtual-router>
+          <entry name="Internal">
+            <interface>{member_xml}</interface>
+          </entry>
+        </virtual-router>
+        """,
+    )
+
+
+def test_bare_vlan_with_ip_is_rewritten_in_zone_and_virtual_router():
+    data = _bare_vlan_export(
+        "<vlan><ip><entry name='10.10.10.1/24'/></ip>"
+        "<interface-management-profile>allow-ping</interface-management-profile></vlan>"
+    )
+
+    assert data["zones"][0]["interfaces"] == ["vlan.1"]
+    assert data["network"]["virtual_routers"][0]["interfaces"] == ["vlan.1"]
+    messages = [w["message"] for w in data["migration_warnings"]]
+    assert not any("doesn't match any exported interface" in m for m in messages)
+    rewrites = [
+        w for w in data["migration_warnings"]
+        if "Rewrote normalized bare parent interface member 'vlan'" in w["message"]
+    ]
+    assert len(rewrites) == 2
+    assert all(w["severity"] == "info" for w in rewrites)
+
+
+def test_bare_vlan_without_ip_stays_unchanged():
+    data = _bare_vlan_export("<vlan/>")
+
+    assert data["zones"][0]["interfaces"] == ["vlan"]
+    assert data["network"]["virtual_routers"][0]["interfaces"] == ["vlan"]
+    messages = [w["message"] for w in data["migration_warnings"]]
+    assert not any("'vlan'" in m and ("Rewrote" in m or "doesn't match" in m) for m in messages)

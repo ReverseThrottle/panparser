@@ -124,9 +124,8 @@ def _reconcile_interface_members(
         owner_name = owner["name"]
         reconciled = []
         for interface_name in owner["interfaces"]:
-            if (
-                interface_name in known_interfaces
-                or interface_name == "vlan"
+            if interface_name in known_interfaces or (
+                interface_name == "vlan" and "vlan" not in normalized_bare_interfaces
             ):
                 reconciled.append(interface_name)
                 continue
@@ -252,6 +251,8 @@ def build_export(
         normalized_bare_interfaces.add("loopback")
     if any(note.startswith("Bare 'tunnel' parent interface") for note in tunnel_notes):
         normalized_bare_interfaces.add("tunnel")
+    if any(note.startswith("Bare 'vlan' parent interface") for note in vlan_notes):
+        normalized_bare_interfaces.add("vlan")
 
     warnings.extend(_reconcile_interface_members(
         zones,
