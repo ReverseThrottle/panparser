@@ -911,13 +911,7 @@ def export_ethernet_interfaces(
             notes.extend(pppoe_notes)
 
             for unit in layer3.findall("units/entry"):
-                sub: dict = {"name": unit.get("name", ""), "parent_interface": name}
-                tag = unit.findtext("tag")
-                if tag:
-                    sub["tag"] = int(tag)
-                sub_comment = unit.findtext("comment")
-                if sub_comment:
-                    sub["comment"] = sub_comment
+                sub = _export_unit_base(unit, name)
                 mtu = unit.findtext("mtu")
                 if mtu:
                     sub["mtu"] = int(mtu)
@@ -958,6 +952,43 @@ def export_ethernet_interfaces(
         parents.append(parent)
 
     return parents, subinterfaces, notes
+
+
+def export_layer2_subinterfaces(network_root: Element | None, itype: str) -> list[dict]:
+    """Return L2 sub-interfaces from ``interface/<itype>`` (ethernet or aggregate-ethernet).
+
+    Kept separate from ``ethernet_subinterfaces``/``aggregate_subinterfaces``,
+    which downstream pushes as layer3 sub-interfaces.
+    """
+    if network_root is None:
+        return []
+    subs: list[dict] = []
+    for entry in network_root.findall(f"interface/{itype}/entry"):
+        layer2 = entry.find("layer2")
+        if layer2 is not None and entry.find("layer3") is None:
+            subs.extend(_export_layer2_units(layer2, entry.get("name", "")))
+    return subs
+
+
+def _export_layer2_units(layer2: Element, parent_name: str) -> list[dict]:
+    """Return L2 sub-interfaces under ``<layer2><units>`` as {name, parent_interface, tag, comment}.
+
+    L2 units carry no IP or management profile, so only the VLAN tag and
+    comment are exported.
+    """
+    return [_export_unit_base(unit, parent_name) for unit in layer2.findall("units/entry")]
+
+
+def _export_unit_base(unit: Element, parent_name: str) -> dict:
+    """Return the {name, parent_interface, tag, comment} fields shared by L2 and L3 units."""
+    sub: dict = {"name": unit.get("name", ""), "parent_interface": parent_name}
+    tag = unit.findtext("tag")
+    if tag:
+        sub["tag"] = int(tag)
+    sub_comment = unit.findtext("comment")
+    if sub_comment:
+        sub["comment"] = sub_comment
+    return sub
 
 
 def _export_dhcp_client(layer3: Element) -> dict | None:
@@ -1157,13 +1188,7 @@ def export_aggregate_interfaces(
             parent["layer3"] = layer3_d
 
             for unit in layer3.findall("units/entry"):
-                sub: dict = {"name": unit.get("name", ""), "parent_interface": name}
-                tag = unit.findtext("tag")
-                if tag:
-                    sub["tag"] = int(tag)
-                sub_comment = unit.findtext("comment")
-                if sub_comment:
-                    sub["comment"] = sub_comment
+                sub = _export_unit_base(unit, name)
                 mtu = unit.findtext("mtu")
                 if mtu:
                     sub["mtu"] = int(mtu)
