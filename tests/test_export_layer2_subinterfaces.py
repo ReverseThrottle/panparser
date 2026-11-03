@@ -8,7 +8,11 @@ from __future__ import annotations
 
 import xml.etree.ElementTree as ET
 
-from export.objects import export_aggregate_interfaces, export_ethernet_interfaces
+from export.objects import (
+    export_aggregate_interfaces,
+    export_ethernet_interfaces,
+    export_layer2_subinterfaces,
+)
 from export.writer import build_export
 from parsers.interfaces import _extract_iface_detail
 
@@ -43,14 +47,15 @@ def test_ethernet_layer2_units_are_exported():
       </units></layer2></entry>
     </ethernet></interface>
     """
-    parents, subs, notes = export_ethernet_interfaces(_net(xml))
+    parents, l3_subs, notes = export_ethernet_interfaces(_net(xml))
 
     assert parents == [{"name": "ethernet1/3", "layer2": {}}]
-    assert subs == [
+    assert l3_subs == []
+    assert notes == []
+    assert export_layer2_subinterfaces(_net(xml)) == [
         {"name": "ethernet1/3.10", "parent_interface": "ethernet1/3", "tag": 10, "comment": "users"},
         {"name": "ethernet1/3.20", "parent_interface": "ethernet1/3", "tag": 20},
     ]
-    assert notes == []
 
 
 def test_aggregate_layer2_units_are_exported():
@@ -61,20 +66,19 @@ def test_aggregate_layer2_units_are_exported():
       </units></layer2></entry>
     </aggregate-ethernet></interface>
     """
-    parents, subs, notes = export_aggregate_interfaces(_net(xml))
+    parents, l3_subs, notes = export_aggregate_interfaces(_net(xml))
 
     assert parents == [{"name": "ae1", "layer2": {}}]
-    assert subs == [
+    assert l3_subs == []
+    assert notes == []
+    assert export_layer2_subinterfaces(_net(xml)) == [
         {"name": "ae1.100", "parent_interface": "ae1", "tag": 100, "comment": "servers"},
     ]
-    assert notes == []
 
 
 def test_layer2_without_units_exports_no_subinterfaces():
     xml = '<interface><ethernet><entry name="ethernet1/4"><layer2/></entry></ethernet></interface>'
-    _parents, subs, _notes = export_ethernet_interfaces(_net(xml))
-
-    assert subs == []
+    assert export_layer2_subinterfaces(_net(xml)) == []
 
 
 def test_tok_layer2_subinterfaces_export_and_match_trust_lan():
@@ -96,14 +100,31 @@ def test_tok_layer2_subinterfaces_export_and_match_trust_lan():
         "vsys1",
     )
 
-    subs = data["network"]["interfaces"]["ethernet_subinterfaces"]
-    assert len(subs) == 8
-    assert subs == expected
+    ifaces = data["network"]["interfaces"]
+    assert ifaces["layer2_subinterfaces"] == expected
+    assert len(ifaces["layer2_subinterfaces"]) == 8
+    # scm-mcp pushes these keys as layer3 sub-interfaces; L2 units must stay out.
+    assert ifaces["ethernet_subinterfaces"] == []
+    assert ifaces["aggregate_subinterfaces"] == []
     unmatched = [
         w for w in data["migration_warnings"]
         if "doesn't match any exported interface" in w["message"]
     ]
     assert unmatched == []
+
+
+def test_layer3_subinterfaces_stay_out_of_layer2_key():
+    xml = """
+    <interface><ethernet>
+      <entry name="ethernet1/2"><layer3><units>
+        <entry name="ethernet1/2.5"><tag>5</tag></entry>
+      </units></layer3></entry>
+    </ethernet></interface>
+    """
+    _parents, l3_subs, _notes = export_ethernet_interfaces(_net(xml))
+
+    assert [s["name"] for s in l3_subs] == ["ethernet1/2.5"]
+    assert export_layer2_subinterfaces(_net(xml)) == []
 
 
 def test_viewer_lists_layer2_subinterfaces_under_parent():

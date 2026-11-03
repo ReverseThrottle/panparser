@@ -37,6 +37,7 @@ from export.objects import (
     export_vlan_interfaces,
     export_ethernet_interfaces,
     export_aggregate_interfaces,
+    export_layer2_subinterfaces,
     export_anti_spyware_profiles,
     export_wildfire_antivirus_profiles,
     export_vulnerability_protection_profiles,
@@ -232,6 +233,7 @@ def build_export(
     vlan_interfaces, vlan_notes         = export_vlan_interfaces(network_root)
     ethernet_parents, ethernet_subinterfaces, ethernet_notes = export_ethernet_interfaces(network_root)
     aggregate_parents, aggregate_subinterfaces, aggregate_notes = export_aggregate_interfaces(network_root)
+    layer2_subinterfaces = export_layer2_subinterfaces(network_root)
 
     interface_groups = (
         loopback_interfaces,
@@ -241,6 +243,7 @@ def build_export(
         ethernet_subinterfaces,
         aggregate_parents,
         aggregate_subinterfaces,
+        layer2_subinterfaces,
     )
     known_interfaces = {
         interface["name"]
@@ -595,6 +598,7 @@ def build_export(
                 "ethernet_subinterfaces": ethernet_subinterfaces,
                 "aggregate": aggregate_parents,
                 "aggregate_subinterfaces": aggregate_subinterfaces,
+                "layer2_subinterfaces": layer2_subinterfaces,
             },
         },
         "objects": {
@@ -715,7 +719,8 @@ def write_export(data: dict, output_path: str) -> None:
         f"{len(ifaces.get('tunnel', []))} tunnel  "
         f"{len(ifaces.get('vlan', []))} vlan  "
         f"{len(ifaces.get('ethernet', []))} eth({len(ifaces.get('ethernet_subinterfaces', []))} subs)  "
-        f"{len(ifaces.get('aggregate', []))} ae({len(ifaces.get('aggregate_subinterfaces', []))} subs)",
+        f"{len(ifaces.get('aggregate', []))} ae({len(ifaces.get('aggregate_subinterfaces', []))} subs)  "
+        f"{len(ifaces.get('layer2_subinterfaces', []))} l2-subs",
         file=sys.stderr,
     )
     print(
