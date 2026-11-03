@@ -936,8 +936,8 @@ def export_ethernet_interfaces(
     return parents, subinterfaces, notes
 
 
-def export_layer2_subinterfaces(network_root: Element | None) -> list[dict]:
-    """Return L2 sub-interfaces from ethernet and aggregate-ethernet ports.
+def export_layer2_subinterfaces(network_root: Element | None, itype: str) -> list[dict]:
+    """Return L2 sub-interfaces from ``interface/<itype>`` (ethernet or aggregate-ethernet).
 
     Kept separate from ``ethernet_subinterfaces``/``aggregate_subinterfaces``,
     which downstream pushes as layer3 sub-interfaces.
@@ -945,11 +945,10 @@ def export_layer2_subinterfaces(network_root: Element | None) -> list[dict]:
     if network_root is None:
         return []
     subs: list[dict] = []
-    for itype in ("ethernet", "aggregate-ethernet"):
-        for entry in network_root.findall(f"interface/{itype}/entry"):
-            layer2 = entry.find("layer2")
-            if layer2 is not None and entry.find("layer3") is None:
-                subs.extend(_export_layer2_units(layer2, entry.get("name", "")))
+    for entry in network_root.findall(f"interface/{itype}/entry"):
+        layer2 = entry.find("layer2")
+        if layer2 is not None and entry.find("layer3") is None:
+            subs.extend(_export_layer2_units(layer2, entry.get("name", "")))
     return subs
 
 

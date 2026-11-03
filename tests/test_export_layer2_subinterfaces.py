@@ -52,7 +52,8 @@ def test_ethernet_layer2_units_are_exported():
     assert parents == [{"name": "ethernet1/3", "layer2": {}}]
     assert l3_subs == []
     assert notes == []
-    assert export_layer2_subinterfaces(_net(xml)) == [
+    assert export_layer2_subinterfaces(_net(xml), "aggregate-ethernet") == []
+    assert export_layer2_subinterfaces(_net(xml), "ethernet") == [
         {"name": "ethernet1/3.10", "parent_interface": "ethernet1/3", "tag": 10, "comment": "users"},
         {"name": "ethernet1/3.20", "parent_interface": "ethernet1/3", "tag": 20},
     ]
@@ -71,14 +72,15 @@ def test_aggregate_layer2_units_are_exported():
     assert parents == [{"name": "ae1", "layer2": {}}]
     assert l3_subs == []
     assert notes == []
-    assert export_layer2_subinterfaces(_net(xml)) == [
+    assert export_layer2_subinterfaces(_net(xml), "ethernet") == []
+    assert export_layer2_subinterfaces(_net(xml), "aggregate-ethernet") == [
         {"name": "ae1.100", "parent_interface": "ae1", "tag": 100, "comment": "servers"},
     ]
 
 
 def test_layer2_without_units_exports_no_subinterfaces():
     xml = '<interface><ethernet><entry name="ethernet1/4"><layer2/></entry></ethernet></interface>'
-    assert export_layer2_subinterfaces(_net(xml)) == []
+    assert export_layer2_subinterfaces(_net(xml), "ethernet") == []
 
 
 def test_tok_layer2_subinterfaces_export_and_match_trust_lan():
@@ -101,8 +103,9 @@ def test_tok_layer2_subinterfaces_export_and_match_trust_lan():
     )
 
     ifaces = data["network"]["interfaces"]
-    assert ifaces["layer2_subinterfaces"] == expected
-    assert len(ifaces["layer2_subinterfaces"]) == 8
+    assert ifaces["ethernet_layer2_subinterfaces"] == expected
+    assert len(ifaces["ethernet_layer2_subinterfaces"]) == 8
+    assert ifaces["aggregate_layer2_subinterfaces"] == []
     # scm-mcp pushes these keys as layer3 sub-interfaces; L2 units must stay out.
     assert ifaces["ethernet_subinterfaces"] == []
     assert ifaces["aggregate_subinterfaces"] == []
@@ -124,7 +127,7 @@ def test_layer3_subinterfaces_stay_out_of_layer2_key():
     _parents, l3_subs, _notes = export_ethernet_interfaces(_net(xml))
 
     assert [s["name"] for s in l3_subs] == ["ethernet1/2.5"]
-    assert export_layer2_subinterfaces(_net(xml)) == []
+    assert export_layer2_subinterfaces(_net(xml), "ethernet") == []
 
 
 def test_viewer_lists_layer2_subinterfaces_under_parent():
