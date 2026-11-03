@@ -852,7 +852,7 @@ def export_vlan_interfaces(network_root: Element | None) -> tuple[list[dict], li
 def export_ethernet_interfaces(
     network_root: Element | None,
 ) -> tuple[list[dict], list[dict], list[str]]:
-    """Return (parent_interfaces, layer3_subinterfaces, notes).
+    """Return (parent_interfaces, subinterfaces, notes).
 
     Parent ethernet interfaces are pushed as layer3 mode with no IP.
     Subinterfaces (units) carry the IP/VLAN config and are pushed separately.
@@ -917,6 +917,7 @@ def export_ethernet_interfaces(
                 subinterfaces.append(sub)
         elif layer2 is not None:
             parent["layer2"] = {}
+            subinterfaces.extend(_export_layer2_units(layer2, name))
         elif tap is not None:
             parent["tap"] = {}
         elif virtual_wire is not None:
@@ -940,6 +941,25 @@ def export_ethernet_interfaces(
         parents.append(parent)
 
     return parents, subinterfaces, notes
+
+
+def _export_layer2_units(layer2: Element, parent_name: str) -> list[dict]:
+    """Return L2 sub-interfaces under ``<layer2><units>`` as {name, parent_interface, tag, comment}.
+
+    L2 units carry no IP or management profile, so only the VLAN tag and
+    comment are exported.
+    """
+    units: list[dict] = []
+    for unit in layer2.findall("units/entry"):
+        sub: dict = {"name": unit.get("name", ""), "parent_interface": parent_name}
+        tag = unit.findtext("tag")
+        if tag:
+            sub["tag"] = int(tag)
+        sub_comment = unit.findtext("comment")
+        if sub_comment:
+            sub["comment"] = sub_comment
+        units.append(sub)
+    return units
 
 
 def _export_dhcp_client(layer3: Element) -> dict | None:
@@ -967,7 +987,7 @@ def _export_dhcp_client(layer3: Element) -> dict | None:
 def export_aggregate_interfaces(
     network_root: Element | None,
 ) -> tuple[list[dict], list[dict], list[str]]:
-    """Return (parent_ae_interfaces, layer3_subinterfaces, notes).
+    """Return (parent_ae_interfaces, subinterfaces, notes).
 
     Parent aggregate interfaces (ae1, ae2…) are pushed as $ae-N variables.
     Subinterfaces (ae1.1, ae1.2…) carry IP/VLAN config and are pushed separately.
@@ -1034,6 +1054,7 @@ def export_aggregate_interfaces(
                 subinterfaces.append(sub)
         elif layer2 is not None:
             parent["layer2"] = {}
+            subinterfaces.extend(_export_layer2_units(layer2, name))
         elif tap is not None:
             parent["tap"] = {}
             notes.append(

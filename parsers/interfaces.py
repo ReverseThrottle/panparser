@@ -81,7 +81,7 @@ def _extract_iface_detail(entry: Element) -> tuple[str, str, list[str]]:
         subs = _get_subinterfaces(layer3, ip)
         return ip, mode, subs
     if layer2 is not None:
-        return "", "layer2", []
+        return "", "layer2", _get_subinterfaces(layer2, "")
 
     # loopback / tunnel: IP may be at top level
     ip = _get_first_ip(entry)
@@ -95,9 +95,9 @@ def _get_first_ip(el: Element) -> str:
     return ""
 
 
-def _get_subinterfaces(layer3: Element, parent_ip: str) -> list[str]:
+def _get_subinterfaces(layer: Element, parent_ip: str) -> list[str]:
     subs = []
-    for sub in layer3.findall("units/entry"):
+    for sub in layer.findall("units/entry"):
         sub_name = sub.get("name", "")
         sub_ip = _get_first_ip(sub)
         subs.append(f"{sub_name}: {sub_ip}" if sub_ip else sub_name)
