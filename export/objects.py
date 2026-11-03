@@ -895,6 +895,13 @@ def export_ethernet_interfaces(
             dhcp_client = _export_dhcp_client(layer3)
             if dhcp_client is not None:
                 layer3_d["dhcp_client"] = dhcp_client
+            mgmt_profile = layer3.findtext("interface-management-profile")
+            if mgmt_profile:
+                layer3_d["interface_management_profile"] = mgmt_profile
+            lldp = _export_lldp(layer3)
+            if lldp is not None:
+                layer3_d["lldp"] = lldp
+            notes.extend(_lldp_profile_notes(layer3, name))
             parent["layer3"] = layer3_d
 
             for unit in layer3.findall("units/entry"):
@@ -916,7 +923,12 @@ def export_ethernet_interfaces(
                     sub["ip"] = [{"name": ip} for ip in sub_ips]
                 subinterfaces.append(sub)
         elif layer2 is not None:
-            parent["layer2"] = {}
+            layer2_d: dict = {}
+            lldp = _export_lldp(layer2)
+            if lldp is not None:
+                layer2_d["lldp"] = lldp
+            notes.extend(_lldp_profile_notes(layer2, name))
+            parent["layer2"] = layer2_d
         elif tap is not None:
             parent["tap"] = {}
         elif virtual_wire is not None:
@@ -962,6 +974,54 @@ def _export_dhcp_client(layer3: Element) -> dict | None:
     if default_route_metric:
         dhcp["default_route_metric"] = int(default_route_metric)
     return dhcp
+
+
+def _export_lldp(layer_el: Element) -> dict | None:
+    """Return the ``lldp`` block for a ``<layer2>``/``<layer3>`` element, or None.
+
+    Only ``lldp/enable`` is read: the SCM SDK's ``LldpConfig`` has a single
+    ``enable`` field (extra=forbid). A ``lldp/profile`` reference is reported
+    separately by ``_lldp_profile_notes``.
+    """
+    lldp_el = layer_el.find("lldp")
+    if lldp_el is None:
+        return None
+    lldp: dict = {}
+    enable = lldp_el.findtext("enable")
+    if enable is not None:
+        lldp["enable"] = enable == "yes"
+    return lldp
+
+
+def _lldp_profile_notes(layer_el: Element, name: str) -> list[str]:
+    """Return a migration note if an ethernet port references an LLDP profile."""
+    profile = layer_el.findtext("lldp/profile")
+    if not profile:
+        return []
+    return [
+        f"Ethernet interface '{name}' references LLDP profile '{profile}'. "
+        "The SCM SDK's per-interface LLDP config only supports 'enable' — the "
+        "LLDP enable flag was exported, but the profile binding must be "
+        "re-applied manually in SCM (the profile object itself is exported "
+        "separately)."
+    ]
+
+
+def _aggregate_lldp_notes(layer_el: Element, name: str) -> list[str]:
+    """Return a migration note if an AE port has LLDP config (no SCM field)."""
+    lldp_el = layer_el.find("lldp")
+    if lldp_el is None:
+        return []
+    enable = lldp_el.findtext("enable")
+    profile = lldp_el.findtext("profile")
+    detail = f"enable={enable!r}" if enable is not None else "no enable flag"
+    if profile:
+        detail += f", profile '{profile}'"
+    return [
+        f"Aggregate interface '{name}' has LLDP configured ({detail}). "
+        "The SCM SDK's aggregate interface model has no LLDP field — it was "
+        "not exported and must be configured manually in SCM."
+    ]
 
 
 def export_aggregate_interfaces(
@@ -1012,6 +1072,10 @@ def export_aggregate_interfaces(
             dhcp_client = _export_dhcp_client(layer3)
             if dhcp_client is not None:
                 layer3_d["dhcp_client"] = dhcp_client
+            mgmt_profile = layer3.findtext("interface-management-profile")
+            if mgmt_profile:
+                layer3_d["interface_management_profile"] = mgmt_profile
+            notes.extend(_aggregate_lldp_notes(layer3, name))
             parent["layer3"] = layer3_d
 
             for unit in layer3.findall("units/entry"):
@@ -1034,6 +1098,7 @@ def export_aggregate_interfaces(
                 subinterfaces.append(sub)
         elif layer2 is not None:
             parent["layer2"] = {}
+            notes.extend(_aggregate_lldp_notes(layer2, name))
         elif tap is not None:
             parent["tap"] = {}
             notes.append(

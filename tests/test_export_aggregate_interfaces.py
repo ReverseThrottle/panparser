@@ -178,3 +178,64 @@ class TestExportAggregateInterfacesModes:
         assert "layer3" in parents[0]
         assert "ha" not in parents[0]
         assert notes == []
+
+
+class TestAggregateMgmtProfileAndLldp:
+    """REV-135(a): AE per-port mgmt profile; AE LLDP has no SCM field -> warn only."""
+
+    def test_layer3_mgmt_profile(self):
+        xml = """
+        <interface><aggregate-ethernet>
+          <entry name="ae1"><layer3>
+            <interface-management-profile>Allow-Ping</interface-management-profile>
+            <ip><entry name="10.2.2.1/24"/></ip>
+          </layer3></entry>
+        </aggregate-ethernet></interface>
+        """
+        parents, subs, notes = export_aggregate_interfaces(_net(xml))
+        assert parents == [{
+            "name": "ae1",
+            "layer3": {
+                "ip": [{"name": "10.2.2.1/24"}],
+                "interface_management_profile": "Allow-Ping",
+            },
+        }]
+        assert notes == []
+
+    def test_layer3_lldp_warns_and_emits_no_key(self):
+        xml = """
+        <interface><aggregate-ethernet>
+          <entry name="ae2"><layer3>
+            <lldp><enable>yes</enable><profile>LLDP-P</profile></lldp>
+          </layer3></entry>
+        </aggregate-ethernet></interface>
+        """
+        parents, _, notes = export_aggregate_interfaces(_net(xml))
+        assert parents == [{"name": "ae2", "layer3": {}}]
+        assert len(notes) == 1
+        assert "ae2" in notes[0] and "LLDP" in notes[0]
+
+    def test_layer2_lldp_warns_and_emits_no_key(self):
+        xml = """
+        <interface><aggregate-ethernet>
+          <entry name="ae3"><layer2>
+            <lldp><enable>yes</enable></lldp>
+          </layer2></entry>
+        </aggregate-ethernet></interface>
+        """
+        parents, _, notes = export_aggregate_interfaces(_net(xml))
+        assert parents == [{"name": "ae3", "layer2": {}}]
+        assert len(notes) == 1
+        assert "ae3" in notes[0] and "LLDP" in notes[0]
+
+    def test_plain_ports_unchanged(self):
+        xml = """
+        <interface><aggregate-ethernet>
+          <entry name="ae4"><layer3/></entry>
+          <entry name="ae5"><layer2/></entry>
+        </aggregate-ethernet></interface>
+        """
+        parents, subs, notes = export_aggregate_interfaces(_net(xml))
+        assert parents == [{"name": "ae4", "layer3": {}}, {"name": "ae5", "layer2": {}}]
+        assert subs == []
+        assert notes == []

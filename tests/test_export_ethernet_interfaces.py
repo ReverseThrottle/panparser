@@ -162,3 +162,102 @@ class TestExportEthernetInterfaces:
         assert "layer3" in parents[0]
         assert "ha" not in parents[0]
         assert notes == []
+
+
+class TestEthernetMgmtProfileAndLldp:
+    """REV-135(a): per-port interface management profile + LLDP enable."""
+
+    XML = """
+    <interface>
+      <ethernet>
+        <entry name="ethernet1/8">
+          <layer3>
+            <interface-management-profile>RemoteVPN-Mgmt</interface-management-profile>
+            <lldp><enable>no</enable></lldp>
+          </layer3>
+        </entry>
+        <entry name="ethernet1/1">
+          <layer2>
+            <lldp><enable>yes</enable><profile>LLDP-Profile-Default</profile></lldp>
+          </layer2>
+        </entry>
+      </ethernet>
+    </interface>
+    """
+
+    def test_layer3_mgmt_profile_and_lldp_disabled(self):
+        parents, subs, notes = export_ethernet_interfaces(_net(self.XML))
+        assert parents[0] == {
+            "name": "ethernet1/8",
+            "layer3": {
+                "interface_management_profile": "RemoteVPN-Mgmt",
+                "lldp": {"enable": False},
+            },
+        }
+        assert subs == []
+
+    def test_layer2_lldp_enabled_with_profile_warns(self):
+        parents, subs, notes = export_ethernet_interfaces(_net(self.XML))
+        assert parents[1] == {"name": "ethernet1/1", "layer2": {"lldp": {"enable": True}}}
+        assert len(notes) == 1
+        assert "ethernet1/1" in notes[0]
+        assert "LLDP-Profile-Default" in notes[0]
+
+    def test_layer3_lldp_profile_warns(self):
+        xml = """
+        <interface><ethernet>
+          <entry name="ethernet1/3"><layer3>
+            <lldp><enable>yes</enable><profile>P1</profile></lldp>
+          </layer3></entry>
+        </ethernet></interface>
+        """
+        parents, _, notes = export_ethernet_interfaces(_net(xml))
+        assert parents[0]["layer3"] == {"lldp": {"enable": True}}
+        assert len(notes) == 1
+        assert "ethernet1/3" in notes[0] and "P1" in notes[0]
+
+    def test_plain_ports_unchanged(self):
+        xml = """
+        <interface><ethernet>
+          <entry name="ethernet1/2"><layer3/></entry>
+          <entry name="ethernet1/4"><layer2/></entry>
+        </ethernet></interface>
+        """
+        parents, subs, notes = export_ethernet_interfaces(_net(xml))
+        assert parents == [
+            {"name": "ethernet1/2", "layer3": {}},
+            {"name": "ethernet1/4", "layer2": {}},
+        ]
+        assert subs == []
+        assert notes == []
+
+    def test_build_export_surfaces_lldp_profile_warning(self):
+        from export.writer import build_export
+
+        data = build_export(
+            ET.fromstring("<config version='11.1.0'/>"),
+            ET.fromstring("<vsys/>"),
+            None,
+            _net(self.XML),
+            "test.xml",
+            "vsys1",
+        )
+        lldp_warns = [
+            w for w in data["migration_warnings"] if "LLDP-Profile-Default" in w["message"]
+        ]
+        assert len(lldp_warns) == 1
+        assert lldp_warns[0]["severity"] == "warn"
+        assert lldp_warns[0]["object_path"] == "network/interfaces"
+
+    def test_contract_with_scm_sdk(self):
+        import pytest
+
+        pytest.importorskip("scm")
+        from scm.models.network.ethernet_interface import EthernetInterfaceCreateModel
+
+        parents, _, _ = export_ethernet_interfaces(_net(self.XML))
+        for p in parents:
+            payload = {k: v for k, v in p.items() if k in ("layer2", "layer3")}
+            # SCM interface names are $variables; scm-mcp maps the PAN-OS name.
+            var_name = "$" + p["name"].replace("/", "-")
+            EthernetInterfaceCreateModel(name=var_name, folder="All", **payload)
