@@ -239,3 +239,27 @@ class TestAggregateMgmtProfileAndLldp:
         assert parents == [{"name": "ae4", "layer3": {}}, {"name": "ae5", "layer2": {}}]
         assert subs == []
         assert notes == []
+
+
+class TestAggregatePppoe:
+    """REV-135(b): AE has no PPPoE field in SCM -> warn only, no key emitted."""
+
+    def test_layer3_pppoe_warns_and_emits_no_key(self):
+        xml = """
+        <interface><aggregate-ethernet>
+          <entry name="ae6"><layer3>
+            <pppoe>
+              <enable>yes</enable><username>isp-user</username>
+              <password>-AQ==SECRET</password>
+            </pppoe>
+          </layer3></entry>
+        </aggregate-ethernet></interface>
+        """
+        parents, subs, notes = export_aggregate_interfaces(_net(xml))
+        assert parents == [{"name": "ae6", "layer3": {}}]
+        assert "pppoe" not in parents[0]
+        assert subs == []
+        assert len(notes) == 1
+        assert "ae6" in notes[0] and "PPPoE" in notes[0]
+        assert "SECRET" not in notes[0]
+        assert "isp-user" not in notes[0]
