@@ -903,6 +903,12 @@ def export_ethernet_interfaces(
                 layer3_d["lldp"] = lldp
             notes.extend(_lldp_profile_notes(layer3, name))
             parent["layer3"] = layer3_d
+            # pppoe is a sibling of layer3, not inside it: scm-mcp forwards
+            # layer3 verbatim and the SDK requires a password we never export.
+            pppoe, pppoe_notes = _export_pppoe(layer3, name)
+            if pppoe is not None:
+                parent["pppoe"] = pppoe
+            notes.extend(pppoe_notes)
 
             for unit in layer3.findall("units/entry"):
                 sub: dict = {"name": unit.get("name", ""), "parent_interface": name}
@@ -993,6 +999,71 @@ def _export_lldp(layer_el: Element) -> dict | None:
     return lldp
 
 
+_PPPOE_AUTH_METHODS = ("CHAP", "PAP", "auto")
+
+
+def _export_pppoe(layer3_el: Element, port_name: str) -> tuple[dict | None, list[str]]:
+    """Return (``pppoe`` block, notes) for an ethernet ``<layer3>``, or (None, []).
+
+    Explicit allow-list matching the SCM SDK's ``PppoeConfig``. The secret
+    child is never read: children are iterated by tag and that one is skipped
+    before its text is touched. Whenever ``<pppoe>`` exists, exactly one
+    re-enter note is emitted; any other unknown child gets a note naming it.
+    """
+    pppoe_el = layer3_el.find("pppoe")
+    if pppoe_el is None:
+        return None, []
+    notes = [
+        f"Ethernet interface '{port_name}' has PPPoE configured. The PPPoE "
+        "password is never read or exported — re-enter PPPoE password for "
+        f"{port_name} manually in SCM."
+    ]
+    pppoe: dict = {}
+    for child in pppoe_el:
+        tag = child.tag
+        if tag == "password":
+            continue  # never read; covered by the re-enter note above
+        if tag == "enable":
+            pppoe["enable"] = (child.text or "").strip() == "yes"
+        elif tag == "username":
+            if child.text and child.text.strip():
+                pppoe["username"] = child.text.strip()
+        elif tag == "authentication":
+            auth = (child.text or "").strip()
+            if auth in _PPPOE_AUTH_METHODS:
+                pppoe["authentication"] = auth
+            elif auth:
+                notes.append(
+                    f"Ethernet interface '{port_name}' PPPoE authentication "
+                    f"'{auth}' has no SCM equivalent (CHAP/PAP/auto) — not "
+                    "exported; set it manually in SCM."
+                )
+        elif tag == "static-address":
+            ip = child.findtext("ip")
+            if ip:
+                pppoe["static_address"] = {"ip": ip}
+        elif tag == "default-route-metric":
+            metric = (child.text or "").strip()
+            if metric.isdigit():
+                pppoe["default_route_metric"] = int(metric)
+        elif tag == "access-concentrator":
+            if child.text and child.text.strip():
+                pppoe["access_concentrator"] = child.text.strip()
+        elif tag == "service":
+            if child.text and child.text.strip():
+                pppoe["service"] = child.text.strip()
+        elif tag == "passive":
+            enable = child.findtext("enable")
+            if enable is not None:
+                pppoe["passive"] = {"enable": enable == "yes"}
+        else:
+            notes.append(
+                f"Ethernet interface '{port_name}' has PPPoE setting '<{tag}>' "
+                "with no SCM equivalent — not exported; configure it manually in SCM."
+            )
+    return pppoe, notes
+
+
 def _lldp_profile_notes(layer_el: Element, name: str) -> list[str]:
     """Return a migration note if an ethernet port references an LLDP profile."""
     profile = layer_el.findtext("lldp/profile")
@@ -1076,6 +1147,13 @@ def export_aggregate_interfaces(
             if mgmt_profile:
                 layer3_d["interface_management_profile"] = mgmt_profile
             notes.extend(_aggregate_lldp_notes(layer3, name))
+            if layer3.find("pppoe") is not None:
+                notes.append(
+                    f"Aggregate interface '{name}' has PPPoE configured. The SCM "
+                    "SDK's aggregate interface model has no PPPoE field — it was "
+                    "not exported and must be configured manually in SCM "
+                    "(including re-entering the PPPoE password)."
+                )
             parent["layer3"] = layer3_d
 
             for unit in layer3.findall("units/entry"):
