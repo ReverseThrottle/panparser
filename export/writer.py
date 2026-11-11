@@ -40,6 +40,8 @@ from export.objects import (
     export_layer2_subinterfaces,
     export_anti_spyware_profiles,
     export_wildfire_antivirus_profiles,
+    list_antivirus_profile_names,
+    find_profile_groups_dropping_wildfire,
     export_vulnerability_protection_profiles,
     export_url_access_profiles,
     export_decryption_profiles,
@@ -401,6 +403,32 @@ def build_export(
                 "placeholder auth/priv passwords "
                 "('MIGRATION-PLACEHOLDER-AUTHPWD', 'MIGRATION-PLACEHOLDER-PRIVPWD'). "
                 "Update each profile's credentials in SCM after migration."
+            ),
+        })
+
+    antivirus_names = list_antivirus_profile_names(vsys_root)
+    if antivirus_names:
+        warnings.append({
+            "severity": "warn",
+            "object_path": "security_profiles/wildfire_antivirus",
+            "message": (
+                f"{len(antivirus_names)} Antivirus profile(s) exported as SCM "
+                "WildFire and Antivirus profile(s) with a default WildFire rule: "
+                + ", ".join(antivirus_names)
+                + ". SCM has no equivalent of the PAN-OS per-decoder antivirus "
+                "actions (e.g. reset-both), so those settings are not migrated. "
+                "Review each profile in SCM."
+            ),
+        })
+    for group in find_profile_groups_dropping_wildfire(vsys_root, shared_root):
+        warnings.append({
+            "severity": "warn",
+            "object_path": f"objects/profile_groups/{group['name']}",
+            "message": (
+                f"Profile group '{group['name']}' references Antivirus profile "
+                f"'{group['virus']}' and WildFire Analysis profile "
+                f"'{group['wildfire']}'. SCM has one combined slot per group, so "
+                f"only '{group['virus']}' is exported; the WildFire reference is dropped."
             ),
         })
 

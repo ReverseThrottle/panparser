@@ -190,6 +190,27 @@ def export_profile_groups(vsys_root, shared_root) -> list[dict]:
     return out
 
 
+def find_profile_groups_dropping_wildfire(vsys_root, shared_root) -> list[dict]:
+    """Profile groups that name different Antivirus and WildFire Analysis profiles.
+
+    SCM has one ``virus_and_wildfire_analysis`` slot per group, and
+    ``export_profile_groups`` keeps the Antivirus reference, so the WildFire
+    reference is dropped. Returned so the caller can warn about it.
+    """
+    found = []
+    for entry, _ in iter_entries(vsys_root, shared_root, "profile-group"):
+        virus = entry.findtext("virus/member")
+        wildfire = entry.findtext("wildfire-analysis/member")
+        if virus and wildfire and virus != wildfire:
+            found.append({
+                "name": entry.get("name", ""),
+                "virus": virus,
+                "wildfire": wildfire,
+            })
+    found.sort(key=lambda x: x["name"].lower())
+    return found
+
+
 def export_url_categories(vsys_root, shared_root) -> list[dict]:
     out = []
     for entry, _ in iter_entries(vsys_root, shared_root, "profiles/custom-url-category"):
@@ -1438,18 +1459,60 @@ def export_anti_spyware_profiles(vsys_root) -> list[dict]:
     return _export_named_profiles(vsys_root, "spyware")
 
 
+_DEFAULT_WILDFIRE_RULE = {
+    "name": "default", "direction": "both",
+    "application": ["any"], "file_type": ["any"],
+    "analysis": "public-cloud",
+}
+
+
+def list_antivirus_profile_names(vsys_root) -> list[str]:
+    """Names of PAN-OS Antivirus profiles (``profiles/virus``), sorted."""
+    if vsys_root is None:
+        return []
+    container = vsys_root.find("profiles/virus")
+    if container is None:
+        return []
+    return sorted(
+        (e.get("name", "") for e in container.findall("entry")),
+        key=str.lower,
+    )
+
+
 def export_wildfire_antivirus_profiles(vsys_root) -> list[dict]:
-    """Export WildFire antivirus profiles including rules (name, direction, analysis, app, file_type).
+    """Export WildFire and Antivirus profiles for SCM's combined profile type.
+
+    PAN-OS keeps Antivirus (``profiles/virus``) and WildFire Analysis
+    (``profiles/wildfire-analysis``) as separate profile types; SCM has a single
+    "WildFire and Antivirus" profile. WildFire profiles are exported with their
+    rules (name, direction, analysis, app, file_type). Antivirus profiles are
+    exported by name and description with a default WildFire rule — SCM has no
+    field for the per-decoder antivirus actions, so those are reported by the
+    caller as a manual review item. If a name exists in both, the WildFire
+    definition wins.
 
     SCM WildfireAvProfileCreateModel requires at least one rule; a default is added if none found.
     """
     out = []
     if vsys_root is None:
         return out
+    wildfire_names: set[str] = set()
     container = vsys_root.find("profiles/wildfire-analysis")
-    if container is None:
-        return out
-    for entry in container.findall("entry"):
+    entries = container.findall("entry") if container is not None else []
+    for entry in entries:
+        wildfire_names.add(entry.get("name", ""))
+    virus_container = vsys_root.find("profiles/virus")
+    if virus_container is not None:
+        for entry in virus_container.findall("entry"):
+            name = entry.get("name", "")
+            if name in wildfire_names:
+                continue
+            d: dict = {"name": name, "rules": [dict(_DEFAULT_WILDFIRE_RULE)]}
+            desc = entry.findtext("description") or ""
+            if desc:
+                d["description"] = desc
+            out.append(d)
+    for entry in entries:
         name = entry.get("name", "")
         desc = entry.findtext("description") or ""
         rules = []
@@ -1469,9 +1532,7 @@ def export_wildfire_antivirus_profiles(vsys_root) -> list[dict]:
                 rule["analysis"] = analysis
             rules.append(rule)
         if not rules:
-            rules = [{"name": "default", "direction": "both",
-                      "application": ["any"], "file_type": ["any"],
-                      "analysis": "public-cloud"}]
+            rules = [dict(_DEFAULT_WILDFIRE_RULE)]
         d: dict = {"name": name, "rules": rules}
         if desc:
             d["description"] = desc
