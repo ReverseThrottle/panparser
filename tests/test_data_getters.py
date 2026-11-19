@@ -57,22 +57,8 @@ SECTION_MARKERS = {
     "redist-profiles": "rp-static",
 }
 
-# Known #9-class defect: SECTIONS routes zones to network_root, but PAN-OS
-# zones live under vsys (closed issue #9 fixed the CLI renderer, not the TUI
-# data path). Reported on issue #80; fix is out of scope for this test task.
-KNOWN_EMPTY_SECTIONS = {
-    "zones": "TUI zones getter reads network_root; zones live under vsys (#9-class, reported on #80)",
-}
-
-
-def _section_params(populated: bool = False):
-    params = []
-    for sec in tui.SECTIONS:
-        marks = ()
-        if populated and sec["id"] in KNOWN_EMPTY_SECTIONS:
-            marks = (pytest.mark.xfail(reason=KNOWN_EMPTY_SECTIONS[sec["id"]], strict=False),)
-        params.append(pytest.param(sec, id=sec["id"], marks=marks))
-    return params
+def _section_params():
+    return [pytest.param(sec, id=sec["id"]) for sec in tui.SECTIONS]
 
 
 @pytest.fixture(scope="module")
@@ -90,7 +76,7 @@ def test_registry_matches_issue_contract():
         assert sec["roots"] in ("vsys", "network", "vsys_shared", "shared")
 
 
-@pytest.mark.parametrize("sec", _section_params(populated=True))
+@pytest.mark.parametrize("sec", _section_params())
 def test_section_getter_populated(sec, roots):
     """Every TUI section extracts rows from the shared sample config."""
     vsys, shared, network = roots
@@ -440,20 +426,20 @@ def test_ip_sort_key_invalid_address():
 
 
 def test_get_zones_extraction_contract():
-    """get_zones extracts rows from whatever root it is handed.
+    """get_zones extracts rows from a vsys root (zone entries -> rows).
 
-    Documents the getter's own contract (zone entries -> rows). The #9-class
-    defect is in the SECTIONS wiring (roots="network" while real configs keep
-    zones under vsys) — see KNOWN_EMPTY_SECTIONS / issue #80 — not here.
+    The getter itself is root-agnostic; the #89 defect was in the SECTIONS
+    wiring (roots="network" while real configs keep zones under vsys), fixed
+    by routing the zones section to the vsys root.
     """
-    net = ET.fromstring(
-        "<network><zone>"
+    vsys = ET.fromstring(
+        "<vsys><zone>"
         "<entry name='z1'><network><layer3><member>ethernet1/1</member></layer3></network>"
         "<zone-protection-profile>zpp</zone-protection-profile><log-setting>ls</log-setting></entry>"
         "<entry name='z2'><network><tap/></network></entry>"
-        "</zone></network>"
+        "</zone></vsys>"
     )
-    rows = _data.get_zones(net)
+    rows = _data.get_zones(vsys)
     assert rows[0] == ("z1", "layer3", "ethernet1/1", "zpp", "ls")
     assert rows[1][0] == "z2"
 

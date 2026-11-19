@@ -114,12 +114,16 @@ def get_nat_rules(vsys_root) -> list[tuple]:
     return rows
 
 
-def get_zones(network_root) -> list[tuple]:
-    """(name, zone_type, ifaces_str, zpp, log_setting)"""
+def get_zones(vsys_root) -> list[tuple]:
+    """(name, zone_type, ifaces_str, zpp, log_setting)
+
+    Expects a VSYS root: PAN-OS zones live at vsys/entry/zone, not under
+    the device network root (#89).
+    """
     rows = []
-    if network_root is None:
+    if vsys_root is None:
         return rows
-    container = network_root.find("zone")
+    container = vsys_root.find("zone")
     if container is None:
         return rows
     for zone in container.findall("entry"):

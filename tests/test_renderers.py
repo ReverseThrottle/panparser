@@ -16,8 +16,8 @@ Root conventions (mirrors panparser.load_config/find_roots):
 - vs = merged vsys+shared renderers
 
 zones is rendered from the VSYS root here — the CLI path fixed by #9. The
-TUI's zones tab is wired to the network root and stays empty; that defect is
-tracked separately (xfail in test_data_getters.py, reported on #80).
+TUI's zones tab had the same wrong-root defect (#89); it is fixed and
+guarded in test_tui_smoke.py / test_data_getters.py.
 """
 
 from __future__ import annotations
