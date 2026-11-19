@@ -18,6 +18,7 @@ from parsers.security import render_security_rules
 from parsers.nat import render_nat_rules
 from parsers.zones import render_zones
 from parsers.virtual_wire import render_virtual_wires
+from parsers.vlans import render_vlans
 from parsers.interfaces import render_interfaces
 from parsers.dhcp import render_dhcp_servers
 from parsers.routing import render_routing
@@ -57,6 +58,7 @@ SECTIONS = [
     "dos-rules",
     "zones",
     "virtual-wires",
+    "vlans",
     "interfaces",
     "dhcp-servers",
     "routing",
@@ -248,6 +250,8 @@ def main() -> None:
                                    render_zones(vsys_root, console, grep)),
         "virtual-wires":  lambda: (section_header(console, "Virtual Wires"),
                                    render_virtual_wires(network_root, console, grep)),
+        "vlans":          lambda: (section_header(console, "VLAN Objects"),
+                                   render_vlans(network_root, console, grep)),
         "interfaces":     lambda: (section_header(console, "Interfaces"),
                                    render_interfaces(network_root, console, grep)),
         "dhcp-servers":   lambda: (section_header(console, "DHCP Servers"),
