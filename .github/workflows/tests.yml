@@ -1,0 +1,33 @@
+name: tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Install from requirements.txt (not `pip install -e .`) so this works
+      # regardless of whether packaging (#71) lands. pan-scm-sdk is pinned so
+      # the 7 SDK contract tests always execute instead of silently skipping.
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest "pan-scm-sdk==0.14.0"
+
+      # pytest.importorskip("scm") skips only when the import fails; proving
+      # the import here makes silent contract-test skips impossible in CI.
+      - name: Verify pan-scm-sdk is importable
+        run: python -c "import scm"
+
+      - name: Run tests
+        run: python -m pytest tests/ -rs

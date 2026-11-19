@@ -16,7 +16,7 @@ git clone https://github.com/ReverseThrottle/panparser.git
 cd panparser
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -r requirements.txt
 ```
 
 ---
