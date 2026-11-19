@@ -250,6 +250,29 @@ re-enabled in SCM.
 
 ---
 
+## Development / Running the tests
+
+The test suite runs on `pytest`, which is deliberately not in `requirements.txt`
+(runtime dependencies only). To reproduce CI locally — same installs, same
+command as `.github/workflows/tests.yml`:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pip install pytest pan-scm-sdk==0.14.0
+python -m pytest tests/ -rs
+```
+
+- The `pan-scm-sdk` pin must track `.github/workflows/tests.yml` — a regression
+  test (`tests/test_readme_install.py`) fails if the two drift apart.
+- Without `pan-scm-sdk` installed, the 7 SDK contract tests **skip** instead of
+  running; `-rs` makes those skips visible in the summary.
+- CI runs the suite on Python 3.10, 3.11 and 3.12, guarding the
+  "Python 3.10+" claim above.
+
+---
+
 ## Project Layout
 
 ```
