@@ -61,8 +61,12 @@ python3 -m panparser running-config.xml --no-color | less
 
 **Available sections:**
 `addresses`, `address-groups`, `services`, `service-groups`, `security-rules`, `nat-rules`,
-`zones`, `interfaces`, `routing`, `tags`, `profiles`, `applications`, `app-groups`,
-`app-filters`, `dos-rules`
+`dos-rules`, `zones`, `virtual-wires`, `vlans`, `interfaces`, `dhcp-servers`, `routing`,
+`tags`, `profiles`, `applications`, `app-groups`, `app-filters`, `certificates`,
+`auth-profiles`, `ssl-profiles`, `zone-protection`, `monitor-profiles`, `gp-gateways`,
+`gp-portals`, `decryption`, `pbf`, `app-override`, `auth-rules`, `qos-rules`, `qos-profiles`,
+`url-categories`, `server-profiles`, `ike-gateways`, `ike-crypto`, `ipsec-crypto`,
+`ipsec-tunnels`, `bgp-peers`, `ospf-areas`, `redist-profiles`
 
 ### TUI
 
@@ -84,22 +88,50 @@ python3 -m panparser running-config.xml --tui --vsys vsys2
 
 ### What the viewer covers
 
-| Section | CLI | TUI |
-|---------|:---:|:---:|
-| Address objects | ✓ | ✓ |
-| Address groups (tree) | ✓ | ✓ |
-| Service objects | ✓ | ✓ |
-| Service groups (tree) | ✓ | ✓ |
-| Security policy rules | ✓ | ✓ |
-| NAT rules | ✓ | ✓ |
-| Security zones | ✓ | ✓ |
-| Network interfaces + subinterfaces | ✓ | ✓ |
-| Static routes (per virtual router) | ✓ | ✓ |
-| Tags | ✓ | ✓ |
-| Security profiles | ✓ | ✓ |
-| Custom applications | ✓ | ✓ |
-| Application groups + filters | ✓ | ✓ |
-| DoS protection rules | ✓ | — |
+All 40 CLI sections (`-s` values). The TUI exposes 36 of them as tabs; CLI-only sections are marked —.
+
+| Section (`-s`) | CLI | TUI |
+|----------------|:---:|:---:|
+| `addresses` | ✓ | ✓ |
+| `address-groups` | ✓ | ✓ |
+| `services` | ✓ | ✓ |
+| `service-groups` | ✓ | ✓ |
+| `security-rules` | ✓ | ✓ |
+| `nat-rules` | ✓ | ✓ |
+| `dos-rules` | ✓ | ✓ |
+| `zones` | ✓ | ✓ |
+| `virtual-wires` | ✓ | — |
+| `vlans` | ✓ | ✓ |
+| `interfaces` | ✓ | ✓ |
+| `dhcp-servers` | ✓ | — |
+| `routing` (static routes, per virtual router) | ✓ | ✓ |
+| `tags` | ✓ | ✓ |
+| `profiles` (security profiles) | ✓ | ✓ |
+| `applications` (custom applications) | ✓ | ✓ |
+| `app-groups` | ✓ | ✓ |
+| `app-filters` | ✓ | ✓ |
+| `certificates` | ✓ | ✓ |
+| `auth-profiles` | ✓ | ✓ |
+| `ssl-profiles` | ✓ | ✓ |
+| `zone-protection` | ✓ | ✓ |
+| `monitor-profiles` | ✓ | — |
+| `gp-gateways` | ✓ | ✓ |
+| `gp-portals` | ✓ | ✓ |
+| `decryption` | ✓ | ✓ |
+| `pbf` | ✓ | ✓ |
+| `app-override` | ✓ | ✓ |
+| `auth-rules` | ✓ | ✓ |
+| `qos-rules` | ✓ | ✓ |
+| `qos-profiles` | ✓ | — |
+| `url-categories` | ✓ | ✓ |
+| `server-profiles` | ✓ | ✓ |
+| `ike-gateways` | ✓ | ✓ |
+| `ike-crypto` | ✓ | ✓ |
+| `ipsec-crypto` | ✓ | ✓ |
+| `ipsec-tunnels` | ✓ | ✓ |
+| `bgp-peers` | ✓ | ✓ |
+| `ospf-areas` | ✓ | ✓ |
+| `redist-profiles` | ✓ | ✓ |
 
 ---
 
@@ -133,15 +165,16 @@ Exported to ~/exports/fw1.json  [fw1  PAN-OS 10.2.0]
 
 ```
 {
-  "meta": { hostname, sw_version, vsys, source_file, exported_at },
+  "meta": { schema_version ("1.2"), source_file, exported_at, hostname, sw_version, vsys },
   "objects": {
-    "tags", "addresses", "stub_objects", "address_groups",
+    "tags", "addresses", "address_groups", "profile_groups",
     "services", "service_groups", "application_groups", "url_categories",
-    "profile_groups", "syslog_server_profiles", "http_server_profiles",
-    "log_forwarding_profiles", "authentication_profiles",
-    "radius_server_profiles", "ldap_server_profiles", "kerberos_server_profiles",
-    "saml_server_profiles", "tacacs_server_profiles",
-    "schedules", "edls", "custom_applications", "application_filters"
+    "custom_applications", "application_filters", "schedules", "edls",
+    "log_forwarding_profiles", "syslog_server_profiles", "http_server_profiles",
+    "snmp_v2c_server_profiles", "snmp_v3_server_profiles",
+    "authentication_profiles", "radius_server_profiles", "ldap_server_profiles",
+    "kerberos_server_profiles", "saml_server_profiles", "tacacs_server_profiles",
+    "certificates", "gp_portals", "gp_gateways", "ssl_profiles"
   },
   "policy": {
     "security_rules", "nat_rules", "decryption_rules",
@@ -155,12 +188,23 @@ Exported to ~/exports/fw1.json  [fw1  PAN-OS 10.2.0]
   },
   "network": {
     "virtual_routers": [ ... ],   // includes BGP, OSPF, static routes, redistribution
-    "ike_crypto_profiles", "ipsec_crypto_profiles",
+    "ike_crypto_profiles", "gp_app_crypto_profiles", "ipsec_crypto_profiles",
     "ike_gateways", "ipsec_tunnels",
-    "interfaces": { ethernet, ethernet_subinterfaces, loopback, tunnel, aggregate, aggregate_subinterfaces },
-    "interface_management_profiles"
+    "lldp_profiles", "virtual_wires", "vlans", "qos_profiles", "dhcp_servers",
+    "interface_management_profiles", "monitor_profiles",
+    "interfaces": {
+      loopback, tunnel, vlan,
+      ethernet, ethernet_subinterfaces,
+      aggregate, aggregate_subinterfaces,
+      ethernet_layer2_subinterfaces, aggregate_layer2_subinterfaces
+    }
   },
-  "migration_warnings": [ { severity, object_path, message } ]
+  "migration_warnings": [ { severity, object_path, message } ],
+
+  // Conditional top-level keys — emitted only when configured in the source XML:
+  "device_setup": { management_interface, service_settings, service_routes },
+  "high_availability": { ... },   // HA pairing visibility; no SCM push path
+  "shared": { botnet_report }
 }
 ```
 
@@ -187,7 +231,7 @@ scm_migrate_panparser_export(
 
 ## Known Limitations
 
-These are tracked as open GitHub issues.
+These limitations are inherent to the PAN-OS → SCM migration path.
 
 ### IKE Gateway Pre-Shared Keys
 
@@ -195,18 +239,6 @@ PAN-OS encrypts PSKs in the XML config — they cannot be recovered. Every IKE g
 pre-shared key authentication is exported with the placeholder `MIGRATION-PLACEHOLDER-PSK`.
 The gateway pushes successfully but the tunnel will not come up until the real PSK is set manually
 in SCM after migration. Gateways using certificate authentication are not affected.
-
-Tracked in [scm-mcp#12](https://github.com/ReverseThrottle/scm-mcp/issues/12).
-
-### IPSec Tunnel-Interface Binding ([#2](https://github.com/ReverseThrottle/panparser/issues/2))
-
-The `tunnel_interface` field (e.g. `tunnel.1`) is not included in the IPSec tunnel export.
-The SCM REST API accepts it but the field was omitted while the SDK did not support it.
-After migration, bind each tunnel to its interface manually via `scm_update_ipsec_tunnel`
-or in the SCM UI.
-
-The fix is straightforward — extract `<tunnel-interface>` in `export_ipsec_tunnels()` and the
-scm-mcp migration pipeline will pass it through automatically ([scm-mcp#13](https://github.com/ReverseThrottle/scm-mcp/issues/13)).
 
 ### DoS Profile Flood Rates for Disabled Protocols
 
@@ -222,16 +254,52 @@ re-enabled in SCM.
 
 ```
 panparser/
-├── panparser.py          # CLI entry point (python3 -m panparser)
+├── panparser.py          # CLI entry point — viewer + exporter modes
 ├── tui.py                # Interactive TUI (Textual)
 ├── requirements.txt      # Runtime dependencies (rich, textual)
 ├── export/
+│   ├── __init__.py
 │   ├── objects.py        # All per-section export functions
 │   └── writer.py         # Assembles full export dict, writes JSON, prints summary
-├── parsers/              # Per-section XML parsers and renderers
+├── parsers/
+│   ├── __init__.py
+│   ├── _data.py          # Pure data extraction (getters) for the TUI
 │   ├── _helpers.py       # Shared XML utilities (get_members, iter_entries, etc.)
-│   └── …                 # addresses, security, nat, interfaces, routing, …
-├── tests/                # pytest suite
+│   ├── addresses.py
+│   ├── app_override.py
+│   ├── applications.py
+│   ├── auth_profiles.py
+│   ├── auth_rules.py
+│   ├── bgp.py
+│   ├── certificates.py
+│   ├── decryption.py
+│   ├── dhcp.py
+│   ├── dos.py
+│   ├── globalprotect.py
+│   ├── ike.py
+│   ├── interfaces.py
+│   ├── ipsec.py
+│   ├── monitor_profiles.py
+│   ├── nat.py
+│   ├── ospf.py
+│   ├── pbf.py
+│   ├── profiles.py
+│   ├── qos_profiles.py
+│   ├── qos_rules.py
+│   ├── redist.py
+│   ├── routing.py
+│   ├── security.py
+│   ├── server_profiles.py
+│   ├── services.py
+│   ├── ssl_profiles.py
+│   ├── tags.py
+│   ├── url_categories.py
+│   ├── virtual_wire.py
+│   ├── vlans.py
+│   ├── zone_protection.py
+│   └── zones.py
+├── tests/                # pytest regression suite
+├── .gitignore
 └── README.md
 ```
 
