@@ -57,6 +57,13 @@ ACTION_STYLES = {
     "reset-client": "yellow", "reset-server": "yellow", "reset-both": "yellow",
 }
 
+# Contract (#90): ``detail_keys`` positionally labels the RAW getter row — the
+# getter's docstring in parsers/_data.py is the schema — NOT the display
+# projection produced by ``row_fn``. The detail bar is a full-record view: it
+# can include fields the table hides (security/nat "Disabled", dos
+# "Description") and its order follows the getter, not the columns (cf.
+# profiles: Profile Type, Scope, Name). Invariant: len(detail_keys) equals the
+# getter's row width — pinned by test_detail_keys_label_raw_rows_positionally.
 SECTIONS: list[dict[str, Any]] = [
     {
         "id": "addresses",
@@ -67,7 +74,7 @@ SECTIONS: list[dict[str, Any]] = [
         "row_fn": lambda i, r: (
             str(i + 1), r[1], r[0], r[2], r[3], r[4]
         ),
-        "detail_keys": ["Name", "Scope", "Type", "Value", "Description"],
+        "detail_keys": ["Scope", "Name", "Type", "Value", "Description"],
     },
     {
         "id": "addr-groups",
@@ -78,7 +85,7 @@ SECTIONS: list[dict[str, Any]] = [
         "row_fn": lambda i, r: (
             str(i + 1), r[1], r[0], r[2], r[3], r[4]
         ),
-        "detail_keys": ["Name", "Scope", "Type", "Members", "Description"],
+        "detail_keys": ["Scope", "Name", "Type", "Members", "Description"],
     },
     {
         "id": "services",
@@ -89,7 +96,7 @@ SECTIONS: list[dict[str, Any]] = [
         "row_fn": lambda i, r: (
             str(i + 1), r[1], r[0], r[2], r[3], r[4], r[5]
         ),
-        "detail_keys": ["Name", "Scope", "Protocol", "Dst Port", "Src Port", "Description"],
+        "detail_keys": ["Scope", "Name", "Protocol", "Dst Port", "Src Port", "Description"],
     },
     {
         "id": "svc-groups",
@@ -100,7 +107,7 @@ SECTIONS: list[dict[str, Any]] = [
         "row_fn": lambda i, r: (
             str(i + 1), r[1], r[0], r[2], r[3]
         ),
-        "detail_keys": ["Name", "Scope", "Members", "Description"],
+        "detail_keys": ["Scope", "Name", "Members", "Description"],
     },
     {
         "id": "security",
@@ -174,7 +181,7 @@ SECTIONS: list[dict[str, Any]] = [
         "getter": "get_tags",
         "roots": "vsys_shared",
         "row_fn": lambda i, r: (str(i + 1), r[1], r[0], r[2], r[3]),
-        "detail_keys": ["Name", "Scope", "Color", "Comments"],
+        "detail_keys": ["Scope", "Name", "Color", "Comments"],
     },
     {
         "id": "profiles",
@@ -192,7 +199,7 @@ SECTIONS: list[dict[str, Any]] = [
         "getter": "get_applications",
         "roots": "vsys_shared",
         "row_fn": lambda i, r: (str(i + 1), r[1], r[0], r[2], r[3], r[4], r[5], r[6]),
-        "detail_keys": ["Name", "Scope", "Category", "Subcategory", "Technology", "Risk", "Default Ports"],
+        "detail_keys": ["Scope", "Name", "Category", "Subcategory", "Technology", "Risk", "Default Ports"],
     },
     {
         "id": "app-groups",
@@ -201,7 +208,7 @@ SECTIONS: list[dict[str, Any]] = [
         "getter": "get_application_groups",
         "roots": "vsys_shared",
         "row_fn": lambda i, r: (str(i + 1), r[1], r[0], r[2]),
-        "detail_keys": ["Name", "Scope", "Members"],
+        "detail_keys": ["Scope", "Name", "Members"],
     },
     {
         "id": "app-filters",
@@ -210,7 +217,7 @@ SECTIONS: list[dict[str, Any]] = [
         "getter": "get_application_filters",
         "roots": "vsys_shared",
         "row_fn": lambda i, r: (r[1], r[0], r[2], r[3], r[4], r[5], r[6]),
-        "detail_keys": ["Name", "Scope", "Category", "Subcategory", "Technology", "Risk", "Characteristic"],
+        "detail_keys": ["Scope", "Name", "Category", "Subcategory", "Technology", "Risk", "Characteristic"],
     },
     {
         "id": "certificates",
