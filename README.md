@@ -254,6 +254,29 @@ re-enabled in SCM.
 
 ---
 
+## Development / Running the tests
+
+The test suite runs on `pytest`, which is deliberately not in `requirements.txt`
+(runtime dependencies only). To reproduce CI locally — same installs, same
+command as `.github/workflows/tests.yml`:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+pip install pytest pan-scm-sdk==0.14.0
+python -m pytest tests/ -rs
+```
+
+- The `pan-scm-sdk` pin must track `.github/workflows/tests.yml` — a regression
+  test (`tests/test_readme_install.py`) fails if the two drift apart.
+- Without `pan-scm-sdk` installed, the 7 SDK contract tests **skip** instead of
+  running; `-rs` makes those skips visible in the summary.
+- CI runs the suite on Python 3.10, 3.11 and 3.12, guarding the
+  "Python 3.10+" claim above.
+
+---
+
 ## Project Layout
 
 ```
@@ -313,5 +336,5 @@ panparser/
 
 - The viewer is **read-only** — it never connects to a firewall or modifies any files.
 - Tested against PAN-OS 10.x and 11.x config exports.
-- Multi-vsys firewalls: use `--vsys` to target a specific vsys (default: `vsys1`).
+- Multi-vsys firewalls: use `--vsys` to target a specific vsys (default: `vsys1`). An unknown vsys name is an error listing the available vsys names — it never silently falls back to another vsys.
 - Both vsys-scoped and `<shared>`-scoped objects are parsed by default (`--no-shared` to skip shared).

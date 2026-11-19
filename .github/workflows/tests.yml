@@ -8,12 +8,18 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    # Matrix guards the README's "Python 3.10+" claim: the floor (3.10) and
+    # the current release (3.12) must both stay green (#82).
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
 
       # Install from requirements.txt (not `pip install -e .`) so this works
       # regardless of whether packaging (#71) lands. pan-scm-sdk is pinned so
