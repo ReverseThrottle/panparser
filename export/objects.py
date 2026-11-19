@@ -902,6 +902,12 @@ def export_ethernet_interfaces(
             if lldp is not None:
                 layer3_d["lldp"] = lldp
             notes.extend(_lldp_profile_notes(layer3, name))
+            ndp_proxy = _export_ndp_proxy(layer3)
+            if ndp_proxy is not None:
+                layer3_d["ndp_proxy"] = ndp_proxy
+            notes.extend(
+                _unsupported_layer3_notes(layer3, name, "Ethernet", ("sdwan-link-settings",))
+            )
             parent["layer3"] = layer3_d
 
             for unit in layer3.findall("units/entry"):
@@ -1024,6 +1030,47 @@ def _export_lldp(layer_el: Element) -> dict | None:
     return lldp
 
 
+def _export_ndp_proxy(layer3: Element) -> dict | None:
+    """Return the ``ndp_proxy`` block for a ``<layer3>`` element, or None.
+
+    The SCM SDK's ``NdpProxyConfig`` (EthernetLayer3.ndp_proxy) has a single
+    ``enabled`` field (extra=forbid), mirroring PAN-OS ``ndp-proxy/enabled``.
+    The aggregate layer3 model has no ndp_proxy field, so AE ports warn
+    instead — see ``_unsupported_layer3_notes``.
+    """
+    ndp_el = layer3.find("ndp-proxy")
+    if ndp_el is None:
+        return None
+    ndp: dict = {}
+    enabled = ndp_el.findtext("enabled")
+    if enabled is not None:
+        ndp["enabled"] = enabled == "yes"
+    return ndp
+
+
+def _unsupported_layer3_notes(
+    layer3: Element, name: str, kind: str, tags: tuple[str, ...]
+) -> list[str]:
+    """Return one migration note per present-but-unsupported layer3 tag.
+
+    ``kind`` is 'Ethernet' or 'Aggregate'; ``tags`` is the explicit allow-list
+    of per-port settings the corresponding SCM SDK layer3 model cannot carry
+    (pan-scm-sdk 0.14.0 has no sdwan field on either model, and no ndp_proxy
+    on AggregateLayer3). Naming the port and field keeps the drop visible
+    instead of silent (#59 criterion 3).
+    """
+    notes: list[str] = []
+    for tag in tags:
+        if layer3.find(tag) is not None:
+            notes.append(
+                f"{kind} interface '{name}' has '{tag}' configured. "
+                f"The SCM SDK's {kind.lower()} interface layer3 model has no "
+                f"'{tag}' equivalent — it was not exported and must be "
+                "configured manually in SCM."
+            )
+    return notes
+
+
 def _lldp_profile_notes(layer_el: Element, name: str) -> list[str]:
     """Return a migration note if an ethernet port references an LLDP profile."""
     profile = layer_el.findtext("lldp/profile")
@@ -1107,6 +1154,11 @@ def export_aggregate_interfaces(
             if mgmt_profile:
                 layer3_d["interface_management_profile"] = mgmt_profile
             notes.extend(_aggregate_lldp_notes(layer3, name))
+            notes.extend(
+                _unsupported_layer3_notes(
+                    layer3, name, "Aggregate", ("ndp-proxy", "sdwan-link-settings")
+                )
+            )
             parent["layer3"] = layer3_d
 
             for unit in layer3.findall("units/entry"):

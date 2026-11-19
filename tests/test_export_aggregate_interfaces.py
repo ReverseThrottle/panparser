@@ -239,3 +239,66 @@ class TestAggregateMgmtProfileAndLldp:
         assert parents == [{"name": "ae4", "layer3": {}}, {"name": "ae5", "layer2": {}}]
         assert subs == []
         assert notes == []
+
+
+class TestAggregateUnsupportedPerPortFields:
+    """#59 residual: AggregateLayer3 (pan-scm-sdk 0.14.0) has neither
+    ``ndp_proxy`` nor any sdwan field, so both are warn-only on AE ports —
+    one note per field naming port + field, no key emitted."""
+
+    def test_ndp_proxy_warns_and_emits_no_key(self):
+        xml = """
+        <interface><aggregate-ethernet>
+          <entry name="ae1"><layer3>
+            <ndp-proxy><enabled>yes</enabled></ndp-proxy>
+          </layer3></entry>
+        </aggregate-ethernet></interface>
+        """
+        parents, _, notes = export_aggregate_interfaces(_net(xml))
+        assert parents == [{"name": "ae1", "layer3": {}}]
+        assert len(notes) == 1
+        assert "ae1" in notes[0] and "ndp-proxy" in notes[0]
+
+    def test_sdwan_link_settings_warns_and_emits_no_key(self):
+        xml = """
+        <interface><aggregate-ethernet>
+          <entry name="ae2"><layer3>
+            <sdwan-link-settings><enable>yes</enable></sdwan-link-settings>
+          </layer3></entry>
+        </aggregate-ethernet></interface>
+        """
+        parents, _, notes = export_aggregate_interfaces(_net(xml))
+        assert parents == [{"name": "ae2", "layer3": {}}]
+        assert len(notes) == 1
+        assert "ae2" in notes[0] and "sdwan-link-settings" in notes[0]
+
+    def test_both_fields_one_note_each(self):
+        xml = """
+        <interface><aggregate-ethernet>
+          <entry name="ae1"><layer3>
+            <ndp-proxy><enabled>no</enabled></ndp-proxy>
+            <sdwan-link-settings><enable>yes</enable></sdwan-link-settings>
+          </layer3></entry>
+        </aggregate-ethernet></interface>
+        """
+        parents, _, notes = export_aggregate_interfaces(_net(xml))
+        assert parents == [{"name": "ae1", "layer3": {}}]
+        assert len(notes) == 2
+        assert any("ndp-proxy" in n for n in notes)
+        assert any("sdwan-link-settings" in n for n in notes)
+        assert all("ae1" in n for n in notes)
+
+    def test_plain_ports_unchanged(self):
+        xml = """
+        <interface><aggregate-ethernet>
+          <entry name="ae4"><layer3><ip><entry name="10.0.0.1/24"/></ip></layer3></entry>
+          <entry name="ae5"><layer2/></entry>
+        </aggregate-ethernet></interface>
+        """
+        parents, subs, notes = export_aggregate_interfaces(_net(xml))
+        assert parents == [
+            {"name": "ae4", "layer3": {"ip": [{"name": "10.0.0.1/24"}]}},
+            {"name": "ae5", "layer2": {}},
+        ]
+        assert subs == []
+        assert notes == []
