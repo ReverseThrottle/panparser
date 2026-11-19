@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import xml.etree.ElementTree as ET
 from xml.etree.ElementTree import Element
@@ -140,6 +141,11 @@ def load_config(path: str) -> Element:
     except FileNotFoundError:
         print(f"Error: file not found: {path}", file=sys.stderr)
         sys.exit(1)
+    except OSError as e:
+        # Directory, permission denied, etc. — same clean boundary error as
+        # a missing file, not a raw traceback (issue #81).
+        print(f"Error: cannot read config file: {e}", file=sys.stderr)
+        sys.exit(1)
     except ET.ParseError as e:
         print(f"Error: XML parse error: {e}", file=sys.stderr)
         sys.exit(1)
@@ -203,6 +209,32 @@ def section_header(console: Console, title: str) -> None:
     console.rule(f"[bold]{title}[/bold]", style="dim cyan")
 
 
+def _exit_on_broken_pipe() -> None:
+    """Exit 0 when the output pipe closes early (issue #81).
+
+    A consumer that stops reading (``| head``, quitting ``less``) is normal
+    interaction, not an error. Point stdout at devnull so the interpreter's
+    shutdown flush cannot raise BrokenPipeError again, then exit 0 — the
+    documented pipe usage must pass under ``set -o pipefail``.
+    """
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    os.dup2(devnull, sys.stdout.fileno())
+    sys.exit(0)
+
+
+class _ViewerConsole(Console):
+    """Console that treats early pipe close as success (issue #81).
+
+    rich >= 13.8 catches BrokenPipeError itself and calls ``on_broken_pipe()``,
+    whose default exits 1 — so a ``__main__`` guard alone never sees the error
+    on modern rich. Mirror rich's own devnull recipe but exit 0.
+    """
+
+    def on_broken_pipe(self) -> None:
+        self.quiet = True
+        _exit_on_broken_pipe()
+
+
 def main() -> None:
     args = parse_args()
 
@@ -217,7 +249,6 @@ def main() -> None:
 
     # --output: write JSON export and exit; do not start the display pipeline
     if args.output:
-        import os
         from export.writer import build_export, write_export
         if os.path.exists(args.output) and not args.force:
             print(
@@ -239,7 +270,7 @@ def main() -> None:
         print(f"Valid sections: {', '.join(SECTIONS)}", file=sys.stderr)
         sys.exit(1)
 
-    console = Console(highlight=False, no_color=args.no_color)
+    console = _ViewerConsole(highlight=False, no_color=args.no_color)
 
     is_full_config = root.find("defaults") is not None
     grep = args.grep
@@ -343,4 +374,12 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+        # Flush inside the guard: piped stdout is block-buffered, so a late
+        # EPIPE can surface here rather than during rendering.
+        sys.stdout.flush()
+    except BrokenPipeError:
+        # rich < 13.8 (requirements floor is 13.0.0) lets BrokenPipeError
+        # propagate instead of calling Console.on_broken_pipe().
+        _exit_on_broken_pipe()
