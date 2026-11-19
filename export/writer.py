@@ -313,6 +313,23 @@ def build_export(
     dos_protection_profiles         = export_dos_protection_profiles(vsys_root)
     dos_protection_rules            = export_dos_protection_rules(vsys_root)
 
+    # Surface profile content SCM cannot represent (issue #67) the same way
+    # virtual-router notes are surfaced above.
+    for export_key, profiles in (
+        ("anti_spyware", anti_spyware_profiles),
+        ("url_access", url_access_profiles),
+        ("decryption", decryption_profiles),
+        ("dns_security", dns_security_profiles),
+        ("zone_protection", zone_protection_profiles),
+    ):
+        for profile in profiles:
+            for note in profile.get("_migration_notes", []):
+                warnings.append({
+                    "severity": "warn",
+                    "object_path": f"security_profiles/{export_key}/{profile['name']}",
+                    "message": note,
+                })
+
     custom_applications     = export_custom_applications(vsys_root)
     application_filters     = export_application_filters(vsys_root)
     schedules               = export_schedules(vsys_root)
