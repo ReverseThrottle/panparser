@@ -70,11 +70,15 @@ python3 -m panparser running-config.xml --no-color | less
 
 ### TUI
 
-```bash
-python3 -m panparser <config.xml> --tui [options]
+The TUI is a separate entry point from the CLI. It accepts only `--vsys` and
+`--no-shared` — the CLI flags (`-s`, `-g`, `--no-color`, `--output`) do not apply.
 
-python3 -m panparser running-config.xml --tui
-python3 -m panparser running-config.xml --tui --vsys vsys2
+```bash
+python3 -m tui <config.xml> [--vsys VSYS] [--no-shared]
+
+python3 -m tui running-config.xml
+python3 -m tui running-config.xml --vsys vsys2
+python3 -m tui running-config.xml --no-shared
 ```
 
 | Key | Action |
