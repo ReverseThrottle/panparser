@@ -332,5 +332,5 @@ panparser/
 
 - The viewer is **read-only** — it never connects to a firewall or modifies any files.
 - Tested against PAN-OS 10.x and 11.x config exports.
-- Multi-vsys firewalls: use `--vsys` to target a specific vsys (default: `vsys1`).
+- Multi-vsys firewalls: use `--vsys` to target a specific vsys (default: `vsys1`). An unknown vsys name is an error listing the available vsys names — it never silently falls back to another vsys.
 - Both vsys-scoped and `<shared>`-scoped objects are parsed by default (`--no-shared` to skip shared).

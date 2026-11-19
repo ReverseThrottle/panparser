@@ -146,11 +146,29 @@ def load_config(path: str) -> Element:
     return tree.getroot()
 
 
+class VsysNotFoundError(Exception):
+    """Requested vsys is absent from a non-empty vsys container.
+
+    Carries the available vsys names so entry points can report them
+    instead of silently exporting a different vsys (issue #78).
+    """
+
+    def __init__(self, vsys_name: str, available: list[str]):
+        self.vsys_name = vsys_name
+        self.available = available
+        super().__init__(
+            f"vsys '{vsys_name}' not found; available: {', '.join(available)}"
+        )
+
+
 def find_roots(root: Element, vsys_name: str, include_shared: bool):
     """Return (vsys_root, shared_root, network_root) from the config root.
 
     Handles both running-config and 'show config all' formats, as well as
     configs that use a <response> wrapper from the API.
+
+    Raises VsysNotFoundError if a vsys container exists but has no entry
+    named vsys_name. An absent or empty vsys container yields vsys_root=None.
     """
     # Some API responses wrap the config in <response><result><config>
     if root.tag == "response":
@@ -171,8 +189,8 @@ def find_roots(root: Element, vsys_name: str, include_shared: bool):
     if vsys_container is not None:
         vsys_root = vsys_container.find(f"entry[@name='{vsys_name}']")
         if vsys_root is None and len(vsys_container) > 0:
-            # Fall back to first vsys
-            vsys_root = vsys_container[0]
+            available = [e.get("name", "") for e in vsys_container]
+            raise VsysNotFoundError(vsys_name, available)
 
     shared_root = root.find("shared") if include_shared else None
     network_root = device_entry.find("network")
@@ -189,9 +207,13 @@ def main() -> None:
     args = parse_args()
 
     root = load_config(args.config)
-    vsys_root, shared_root, network_root = find_roots(
-        root, args.vsys, include_shared=not args.no_shared
-    )
+    try:
+        vsys_root, shared_root, network_root = find_roots(
+            root, args.vsys, include_shared=not args.no_shared
+        )
+    except VsysNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
     # --output: write JSON export and exit; do not start the display pipeline
     if args.output:

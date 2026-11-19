@@ -12,7 +12,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import DataTable, Footer, Header, Input, Label, Static, TabbedContent, TabPane
 
-from panparser import load_config, find_roots
+from panparser import load_config, find_roots, VsysNotFoundError
 from parsers._data import (
     get_address_groups,
     get_addresses,
@@ -631,9 +631,13 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     root = load_config(args.config)
-    vsys_root, shared_root, network_root = find_roots(
-        root, args.vsys, include_shared=not args.no_shared
-    )
+    try:
+        vsys_root, shared_root, network_root = find_roots(
+            root, args.vsys, include_shared=not args.no_shared
+        )
+    except VsysNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
     app = PanosViewerApp(vsys_root, shared_root, network_root, args.config, args.vsys)
     app.run()
 
