@@ -13,15 +13,17 @@ Contract under test (tui.py at current main):
 - Bindings: q quit, / focus_filter, r reset_filter, escape unfocus_filter.
 - Input.Changed filters the active table against every raw cell.
 
-Known #9-class defect (reported on #80, tracked as #90, out of scope here):
-the detail bar zips detail_keys against the RAW getter row, but several
-vsys_shared getters return (scope, name, ...) while their detail_keys
-start ["Name", "Scope", ...] — so the detail bar shows "Name: vsys".
-Documented with an xfail test below.
-
-The zones-tab empty-data defect (#89, the other #9-class twin) is FIXED:
+The zones-tab empty-data defect (#89, one #9-class twin) is FIXED:
 SECTIONS routes zones to the vsys root, guarded by
 test_zones_tab_populated_from_vsys_root below.
+
+Fixed by #90 (the other #9-class twin): the detail bar labels the RAW
+getter row positionally — detail_keys is the getter's schema, not the
+display order. The 8 vsys_shared object sections had authored
+detail_keys in display order, so Name/Scope values came out swapped;
+their key lists now follow the same raw-record contract as every other
+section (cf. profiles, which lists Scope before Name). Pinned by the
+alignment, width-invariant, and hidden-field tests below.
 
 Focus model (verified against textual 8.x): the filter Input is auto-focused
 on startup, so printable keys (including q/r//) are typed into it while it
@@ -34,7 +36,7 @@ import pytest
 from textual.widgets import DataTable, Input, Static, TabbedContent, TabPane
 
 import tui
-from viewer_harness import run_app_test, sample_roots
+from viewer_harness import roots_for, run_app_test, sample_roots
 
 
 def _app_factory():
@@ -194,21 +196,77 @@ def test_q_quits():
     run_app_test(_app_factory, body)
 
 
-@pytest.mark.xfail(
-    reason="detail bar zips detail_keys against raw (scope, name, ...) rows — "
-    "Name/Scope labels swapped for vsys_shared sections (#9-class, reported on #80)",
-    strict=False,
-)
-def test_detail_bar_labels_align_with_row_semantics():
+# The 8 vsys_shared object sections whose getters return (scope, name, ...)
+# and whose row_fn swaps fields 0/1 for display. Covers both row_fn shapes:
+# index-prefixed (addresses, tags, ...) and non-indexed (app-filters). (#90)
+_SCOPE_NAME_SECTIONS = [
+    "addresses", "addr-groups", "services", "svc-groups",
+    "tags", "applications", "app-groups", "app-filters",
+]
+
+
+@pytest.mark.parametrize("section_id", _SCOPE_NAME_SECTIONS)
+def test_detail_bar_labels_align_with_row_semantics(section_id):
     async def body(app, pilot):
+        await pilot.pause()
+        tc = app.query_one(TabbedContent)
+        tc.active = f"tab-{section_id}"
+        await pilot.pause()
+        await pilot.press("escape")  # focus the section's table
+        await pilot.press("down")    # highlight row 1 (e.g. host-web)
+        await pilot.pause()
+        # Oracle is the getter's documented (scope, name, ...) schema,
+        # independent of detail_keys.
+        scope, name = app._section_data[section_id][1][:2]
+        detail = str(app.query_one("#detail-bar", Static).render())
+        # The Name label must carry the object name, not the scope.
+        assert f"Name: {name}" in detail
+        assert f"Scope: {scope}" in detail
+        assert f"Name: {scope}" not in detail
+        # Raw-record order: detail_keys follows the getter, so Scope is
+        # labeled first (same contract as profiles/gp-portals).
+        assert detail.startswith(f"Scope: {scope}  |  Name: {name}")
+
+    run_app_test(_app_factory, body)
+
+
+def test_detail_keys_label_raw_rows_positionally():
+    """#90 contract: detail_keys positionally labels the RAW getter row, so
+    its width must equal the getter's row width for every section. Pins the
+    single generic zip contract and catches future key/row drift."""
+    vsys, shared, network = sample_roots()
+    for sec in tui.SECTIONS:
+        rows = tui.GETTERS[sec["getter"]](
+            *roots_for(sec.get("roots", "vsys_shared"), vsys, shared, network)
+        )
+        for raw in rows:
+            assert len(sec["detail_keys"]) == len(raw), sec["id"]
+
+
+@pytest.mark.parametrize(
+    "section_id, hidden_key, hidden_idx",
+    [
+        ("security", "Disabled", 2),
+        ("nat", "Disabled", 2),
+        ("dos", "Description", 10),
+    ],
+)
+def test_detail_bar_keeps_hidden_fields_for_rule_sections(section_id, hidden_key, hidden_idx):
+    """#90 AC3: rule sections whose detail_keys include fields the table
+    hides (security/nat Disabled, dos Description) must keep labeling the
+    full raw record — the fix must not regress them to a display-only zip."""
+    async def body(app, pilot):
+        await pilot.pause()
+        tc = app.query_one(TabbedContent)
+        tc.active = f"tab-{section_id}"
         await pilot.pause()
         await pilot.press("escape")
         await pilot.press("down")
         await pilot.pause()
+        raw = app._section_data[section_id][1]
         detail = str(app.query_one("#detail-bar", Static).render())
-        # Cursor starts on row 0; "down" highlights row 1 = host-web (scope
-        # vsys). The Name label must carry the object name, not the scope.
-        assert "Name: host-web" in detail
+        assert f"Name: {raw[1]}" in detail
+        assert f"{hidden_key}: {raw[hidden_idx]}" in detail
 
     run_app_test(_app_factory, body)
 
