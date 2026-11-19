@@ -134,7 +134,9 @@ SECTIONS: list[dict[str, Any]] = [
         "title": "Zones",
         "columns": ["Name", "Type", "Interfaces", "Zone Protect Profile", "Log Setting"],
         "getter": "get_zones",
-        "roots": "network",
+        # PAN-OS zones live at devices/entry/vsys/entry/zone — NOT under the
+        # device network root (#89, TUI twin of #9).
+        "roots": "vsys",
         "row_fn": lambda i, r: (r[0], r[1], r[2], r[3], r[4]),
         "detail_keys": ["Name", "Type", "Interfaces", "Zone Protection Profile", "Log Setting"],
     },

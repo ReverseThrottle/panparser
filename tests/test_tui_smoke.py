@@ -13,15 +13,15 @@ Contract under test (tui.py at current main):
 - Bindings: q quit, / focus_filter, r reset_filter, escape unfocus_filter.
 - Input.Changed filters the active table against every raw cell.
 
-Known #9-class defects (reported on #80, out of scope here):
-1. The zones tab renders but is always empty on real configs because
-   SECTIONS wires zones to network_root while PAN-OS zones live under vsys.
-   The smoke test asserts the tab renders without exception; the data
-   defect is xfail-marked in test_data_getters.py.
-2. The detail bar zips detail_keys against the RAW getter row, but several
-   vsys_shared getters return (scope, name, ...) while their detail_keys
-   start ["Name", "Scope", ...] — so the detail bar shows "Name: vsys".
-   Documented with an xfail test below.
+Known #9-class defect (reported on #80, tracked as #90, out of scope here):
+the detail bar zips detail_keys against the RAW getter row, but several
+vsys_shared getters return (scope, name, ...) while their detail_keys
+start ["Name", "Scope", ...] — so the detail bar shows "Name: vsys".
+Documented with an xfail test below.
+
+The zones-tab empty-data defect (#89, the other #9-class twin) is FIXED:
+SECTIONS routes zones to the vsys root, guarded by
+test_zones_tab_populated_from_vsys_root below.
 
 Focus model (verified against textual 8.x): the filter Input is auto-focused
 on startup, so printable keys (including q/r//) are typed into it while it
@@ -75,6 +75,33 @@ def test_every_tab_activates_without_exception():
             n = len(app._section_data[sec["id"]])
             assert dt.row_count == n
             assert app.query_one("#row-count", Static).render() == f"{n} rows"
+
+    run_app_test(_app_factory, body)
+
+
+def test_zones_tab_populated_from_vsys_root():
+    """#89 regression guard: PAN-OS zones live under vsys, not the device
+    network root. The zones tab must list the selected vsys's zones on the
+    populated fixture — a wrong-root wiring (roots="network") silently
+    empties it, so assert real rows, not just "renders without exception".
+    """
+
+    async def body(app, pilot):
+        await pilot.pause()
+        tc = app.query_one(TabbedContent)
+        tc.active = "tab-zones"
+        await pilot.pause()
+        dt = app.query_one("#dt-zones", DataTable)
+        assert dt.row_count > 0
+        assert app.query_one("#row-count", Static).render() == f"{dt.row_count} rows"
+        # Exact rows from the sample config's vsys1 (sorted by name).
+        assert dt.row_count == 2
+        assert [str(c) for c in dt.get_row_at(0)] == [
+            "trust", "layer3", "ethernet1/1", "zpp-strict", "default",
+        ]
+        assert [str(c) for c in dt.get_row_at(1)] == [
+            "untrust", "layer3", "ethernet1/2", "", "",
+        ]
 
     run_app_test(_app_factory, body)
 
