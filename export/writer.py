@@ -80,17 +80,62 @@ def _normalize_name(name: str) -> str:
     return name.rstrip("_")
 
 
-def _build_rename_map(items: list[dict]) -> dict[str, str]:
-    """Map original name → normalized name for objects with trailing underscores."""
-    return {
+def _iter_named_objects(data):
+    """Yield every named collection item in the export (#93).
+
+    A named object is a dict with a string 'name' that is an element of a
+    list anywhere in the export (addresses, services, rules, zones, ...).
+    Structural scope: new exporters participate automatically. Nested
+    sub-entities that also carry 'name' keys (interface IP entries, BGP
+    peers, syslog servers inside a profile) are NOT standalone SCM objects
+    and are deliberately not yielded — we never descend into items.
+    """
+    if isinstance(data, dict):
+        for value in data.values():
+            yield from _iter_named_objects(value)
+    elif isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict) and isinstance(item.get("name"), str):
+                yield item
+
+
+def _build_rename_map(items: list[dict]) -> tuple[dict[str, str], list[str]]:
+    """Map original name → normalized name for objects with trailing underscores.
+
+    Returns (rename_map, skipped). A candidate rename is skipped — the name
+    keeps its original spelling — when normalizing it would create a
+    duplicate SCM name: the target already exists among the exported names,
+    another candidate normalizes to the same target, or the target would be
+    empty. Skipped names are returned so the caller can warn about them.
+    """
+    candidates = {
         item["name"]: _normalize_name(item["name"])
         for item in items
         if item["name"] != _normalize_name(item["name"])
     }
+    existing = {item["name"] for item in items}
+    target_counts: dict[str, int] = {}
+    for target in candidates.values():
+        target_counts[target] = target_counts.get(target, 0) + 1
+    rename_map: dict[str, str] = {}
+    skipped: list[str] = []
+    for old, new in candidates.items():
+        if not new or new in existing or target_counts[new] > 1:
+            skipped.append(old)
+        else:
+            rename_map[old] = new
+    return rename_map, skipped
 
 
 def _apply_renames(data: dict, rename_map: dict[str, str]) -> dict:
-    """Walk the full export dict and replace old names with normalized ones everywhere."""
+    """Walk the full export dict and replace old names with normalized ones everywhere.
+
+    Contract (#93): any string VALUE exactly equal to a renamed name is
+    rewritten — including free-text fields such as descriptions. Dict keys
+    and non-string values are never touched, and partial matches are left
+    alone. The collision guard in _build_rename_map keeps every rewrite
+    unambiguous.
+    """
     if not rename_map:
         return data
 
@@ -100,7 +145,8 @@ def _apply_renames(data: dict, rename_map: dict[str, str]) -> dict:
         if isinstance(obj, list):
             return [fix(v) for v in obj]
         if isinstance(obj, dict):
-            # 'name' key is the object's own name — rename it
+            # Rebuild values only — keys (including 'name') are never rewritten;
+            # an object's own name is renamed because its VALUE matches.
             result = {}
             for k, v in obj.items():
                 result[k] = fix(v)
@@ -628,10 +674,6 @@ def build_export(
             "message": note,
         })
 
-    # Build a unified rename map for all objects with trailing underscores
-    all_named = addresses + address_groups + service_groups + tags
-    rename_map = _build_rename_map(all_named)
-
     data = {
         "meta": {
             "schema_version": "1.2",
@@ -732,9 +774,13 @@ def build_export(
     if botnet_report:
         data["shared"] = {"botnet_report": botnet_report}
 
-    # Apply trailing-underscore normalization across all names and references
+    # Trailing-underscore normalization (#93): every named object in every
+    # exported collection participates, and references are rewritten
+    # export-wide. Warnings must be appended BEFORE _apply_renames, which
+    # rebuilds every list/dict — appending to `warnings` afterwards would
+    # orphan them from the returned data.
+    rename_map, skipped = _build_rename_map(list(_iter_named_objects(data)))
     if rename_map:
-        data = _apply_renames(data, rename_map)
         warnings.append({
             "severity": "info",
             "object_path": "names",
@@ -744,6 +790,19 @@ def build_export(
                 + ("..." if len(rename_map) > 10 else "")
             ),
         })
+    if skipped:
+        warnings.append({
+            "severity": "warn",
+            "object_path": "names",
+            "message": (
+                f"{len(skipped)} object name(s) with trailing underscores were left "
+                "unchanged because the normalized name already exists or is "
+                f"ambiguous: {', '.join(sorted(skipped))}. Rename them manually "
+                "before importing to SCM."
+            ),
+        })
+    if rename_map:
+        data = _apply_renames(data, rename_map)
 
     return data
 
