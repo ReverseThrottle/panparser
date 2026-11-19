@@ -1415,27 +1415,204 @@ def export_nat_rules(vsys_root) -> list[dict]:
 
 # ── Security Profiles (Chunk 2) ───────────────────────────────────────────────
 
-def _export_named_profiles(vsys_root, path: str) -> list[dict]:
-    """Export profiles that only need name + description (complex rule bodies are skipped)."""
-    out = []
-    if vsys_root is None:
-        return out
-    container = vsys_root.find(f"profiles/{path}")
-    if container is None:
-        return out
-    for entry in container.findall("entry"):
-        name = entry.get("name", "")
-        desc = entry.findtext("description") or ""
-        d: dict = {"name": name}
-        if desc:
-            d["description"] = desc
-        out.append(d)
-    out.sort(key=lambda x: x["name"].lower())
+def _snake_keys(value):
+    """Recursively rewrite PAN-OS dashed dict keys to snake_case."""
+    if isinstance(value, dict):
+        return {k.replace("-", "_"): _snake_keys(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_snake_keys(v) for v in value]
+    return value
+
+
+def _parse_int(text: str | None) -> int | None:
+    if text is None:
+        return None
+    try:
+        return int(text)
+    except ValueError:
+        return None
+
+
+def _parse_profile_action(action_el: Element | None) -> dict:
+    """Parse a PAN-OS one-of action container into the SDK's snake_case shape.
+
+    Simple actions are empty containers (<action><drop/></action> -> {"drop": {}});
+    block-ip carries track-by/duration sub-fields. Used by anti-spyware rules /
+    threat exceptions, DNS security lists and zone-protection scan entries.
+    """
+    if action_el is None:
+        return {}
+    for child in action_el:
+        if child.tag == "block-ip":
+            block: dict = {}
+            track_by = child.findtext("track-by")
+            if track_by:
+                block["track_by"] = track_by
+            duration = _parse_int(child.findtext("duration"))
+            if duration is not None:
+                block["duration"] = duration
+            return {"block_ip": block}
+        return {child.tag.replace("-", "_"): {}}
+    return {}
+
+
+def _parse_flag_block(el: Element, allowed: set[str], *, keep_no: bool = False,
+                      nested: dict[str, set[str]] | None = None,
+                      ignore: set[str] | None = None) -> tuple[dict, list[str]]:
+    """Parse a PAN-OS block of yes/no flags into snake_case booleans.
+
+    Only flags in ``allowed`` (the ones the SCM CreateModel accepts) are
+    exported; ``nested`` maps sub-object tags to their own allowed sets.
+    ``ignore`` lists tags the caller exports elsewhere (e.g. URL category
+    lists), so they are not misreported as unsupported.
+    Returns (flags, unsupported) where unsupported lists active 'yes' tags
+    with no SCM representation — callers surface them as migration notes so
+    content is never dropped silently.
+
+    By default only 'yes' flags are exported: False is the SDK default for
+    these blocks and scm-mcp drops falsy content on push. ``keep_no=True``
+    is for blocks where the SDK default is True (decryption protocol
+    settings), so an explicit 'no' must survive as False.
+    """
+    out: dict = {}
+    unsupported: list[str] = []
+    for child in el:
+        tag = child.tag
+        if ignore and tag in ignore:
+            continue
+        if nested and tag in nested:
+            sub, sub_unsup = _parse_flag_block(child, nested[tag], keep_no=keep_no)
+            if sub:
+                out[tag.replace("-", "_")] = sub
+            unsupported.extend(f"{tag}/{u}" for u in sub_unsup)
+        elif len(child):
+            unsupported.append(tag)
+        elif child.text == "yes":
+            if tag in allowed:
+                out[tag.replace("-", "_")] = True
+            else:
+                unsupported.append(tag)
+        elif keep_no and child.text == "no" and tag in allowed:
+            out[tag.replace("-", "_")] = False
+    return out, unsupported
+
+
+def _xml_to_dict(el: Element) -> dict:
+    """Generic recursive XML -> snake_case dict for free-form SDK Dict fields.
+
+    Used where the SDK models a block as Dict[str, Any] (zone-protection
+    ipv6, URL credential-enforcement ip-user mode): every child is preserved,
+    yes/no leaves become booleans, everything else stays text.
+    """
+    out: dict = {}
+    for child in el:
+        key = child.tag.replace("-", "_")
+        if len(child):
+            out[key] = _xml_to_dict(child)
+        elif child.text == "yes":
+            out[key] = True
+        elif child.text == "no":
+            out[key] = False
+        elif child.text:
+            out[key] = child.text
     return out
 
 
+def _unsupported_tags(entry: Element, tags: tuple[str, ...]) -> list[str]:
+    """Present-and-active PAN-OS tags that have no SCM representation.
+
+    Containers count when they have content; yes/no flags only when 'yes'.
+    """
+    found = []
+    for tag in tags:
+        el = entry.find(tag)
+        if el is not None and (len(el) or (el.text or "").strip() == "yes"):
+            found.append(tag)
+    return found
+
+
+def _note_unsupported(obj: dict, unsupported: list[str]) -> None:
+    if unsupported:
+        obj.setdefault("_migration_notes", []).append(
+            f"no SCM representation for: {', '.join(unsupported)} — recreate manually"
+        )
+
+
 def export_anti_spyware_profiles(vsys_root) -> list[dict]:
-    return _export_named_profiles(vsys_root, "spyware")
+    """Export anti-spyware profiles with full rule/exception content (issue #67).
+
+    Shape mirrors pan-scm-sdk AntiSpywareProfileCreateModel. Legacy
+    botnet-domains and disable-override have no SCM representation and are
+    surfaced as migration notes instead of being dropped silently.
+    """
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("profiles/spyware")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        d: dict = {"name": entry.get("name", "")}
+        desc = entry.findtext("description") or ""
+        if desc:
+            d["description"] = desc
+        rules = []
+        for rule_el in entry.findall("rules/entry"):
+            # SCM requires severity/category per rule; PAN-OS defaults are 'any'.
+            rule: dict = {
+                "name": rule_el.get("name", ""),
+                "severity": get_members(rule_el, "severity/member") or ["any"],
+                "category": rule_el.findtext("category") or "any",
+                "threat_name": rule_el.findtext("threat-name") or "any",
+            }
+            pc = rule_el.findtext("packet-capture")
+            if pc:
+                rule["packet_capture"] = pc
+            action = _parse_profile_action(rule_el.find("action"))
+            if action:
+                rule["action"] = action
+            rules.append(rule)
+        if rules:
+            d["rules"] = rules
+        exceptions = []
+        for te in entry.findall("threat-exception/entry"):
+            # SCM requires packet_capture; PAN-OS default is 'disable'.
+            t: dict = {
+                "name": te.get("name", ""),
+                "packet_capture": te.findtext("packet-capture") or "disable",
+            }
+            action = _parse_profile_action(te.find("action"))
+            if action:
+                t["action"] = action
+            exempt = [{"name": e.get("name", "")} for e in te.findall("exempt-ip/entry")]
+            if exempt:
+                t["exempt_ip"] = exempt
+            notes = te.findtext("notes")
+            if notes:
+                t["notes"] = notes
+            exceptions.append(t)
+        if exceptions:
+            d["threat_exception"] = exceptions
+        mica = []
+        for m in entry.findall("mica-engine-spyware-enabled/entry"):
+            mica.append({
+                "name": m.get("name", ""),
+                # PAN-OS default when the element is absent (codegen spec).
+                "inline_policy_action": m.findtext("inline-policy-action") or "alert",
+            })
+        if mica:
+            d["mica_engine_spyware_enabled"] = mica
+        if entry.findtext("cloud-inline-analysis") == "yes":
+            d["cloud_inline_analysis"] = True
+        for src, dst in (("inline-exception-edl-url", "inline_exception_edl_url"),
+                         ("inline-exception-ip-address", "inline_exception_ip_address")):
+            members = get_members(entry, f"{src}/member")
+            if members:
+                d[dst] = members
+        _note_unsupported(d, _unsupported_tags(entry, ("botnet-domains", "disable-override")))
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
 
 
 def export_wildfire_antivirus_profiles(vsys_root) -> list[dict]:
@@ -1536,17 +1713,267 @@ def export_vulnerability_protection_profiles(vsys_root) -> list[dict]:
     return out
 
 
+# URL-filtering flags with a direct SCM field (pan-scm-sdk UrlAccessProfileCreateModel).
+_URL_YES_FLAGS = {
+    "cloud-inline-cat", "local-inline-cat", "log-container-page-only",
+    "log-http-hdr-referer", "log-http-hdr-user-agent", "log-http-hdr-xff",
+    "safe-search-enforcement",
+}
+_URL_CATEGORY_ACTIONS = ("alert", "allow", "block", "continue")
+
+
+def _parse_credential_enforcement(ce: Element) -> tuple[dict, list[str]]:
+    """credential-enforcement block -> SDK CredentialEnforcement shape.
+
+    mode is a one-of: disabled/domain-credentials are empty containers,
+    group-mapping carries the mapping name, ip-user is a free-form dict in
+    the SDK so its children are preserved verbatim (snake_cased).
+    """
+    out: dict = {}
+    unsupported: list[str] = []
+    mode_el = ce.find("mode")
+    if mode_el is not None:
+        for child in mode_el:
+            tag = child.tag.replace("-", "_")
+            if child.tag == "group-mapping":
+                out["mode"] = {"group_mapping": child.text or ""}
+            elif len(child):
+                out["mode"] = {tag: _xml_to_dict(child)}
+            else:
+                out["mode"] = {tag: {}}
+            break
+    for action in _URL_CATEGORY_ACTIONS:
+        members = get_members(ce, f"{action}/member")
+        if members:
+            out[action] = members
+    # SCM CredentialEnforcement has no redirect list.
+    if get_members(ce, "redirect/member"):
+        unsupported.append("credential-enforcement/redirect")
+    severity = ce.findtext("log-severity")
+    if severity:
+        out["log_severity"] = severity
+    return out, unsupported
+
+
 def export_url_access_profiles(vsys_root) -> list[dict]:
-    """Export URL filtering profiles (mapped to URL Access profiles in SCM)."""
-    return _export_named_profiles(vsys_root, "url-filtering")
+    """Export URL-filtering profiles with full content (issue #67).
+
+    Shape mirrors pan-scm-sdk UrlAccessProfileCreateModel: category action
+    lists, credential enforcement, safe-search/logging flags and inline
+    category exceptions. enable-container-page, http-header-insertion,
+    override and disable-override have no SCM representation and become
+    migration notes.
+    """
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("profiles/url-filtering")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        d: dict = {"name": entry.get("name", "")}
+        desc = entry.findtext("description") or ""
+        if desc:
+            d["description"] = desc
+        for action in (*_URL_CATEGORY_ACTIONS, "redirect"):
+            members = get_members(entry, f"{action}/member")
+            if members:
+                d[action] = members
+        flags, unsupported = _parse_flag_block(
+            entry, _URL_YES_FLAGS,
+            # Exported explicitly below/above — not unsupported content.
+            ignore={"description", "credential-enforcement", "mlav-category-exception",
+                    *_URL_CATEGORY_ACTIONS, "redirect"},
+        )
+        d.update(flags)
+        exceptions = get_members(entry, "mlav-category-exception/member")
+        if exceptions:
+            d["mlav_category_exception"] = exceptions
+        ce = entry.find("credential-enforcement")
+        if ce is not None:
+            ce_out, ce_unsup = _parse_credential_enforcement(ce)
+            if ce_out:
+                d["credential_enforcement"] = ce_out
+            unsupported.extend(ce_unsup)
+        unsupported.extend(_unsupported_tags(
+            entry, ("enable-container-page", "http-header-insertion", "override")))
+        _note_unsupported(d, unsupported)
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
+# SSL proxy flag sets accepted by the pan-scm-sdk decryption CreateModels
+# (PAN-OS tag names; exported keys are their snake_case forms). PAN-OS has
+# extra block-if-* toggles (HSM/SNI/resource checks) that SCM cannot
+# represent — those become migration notes.
+_SSL_FORWARD_PROXY_FLAGS = {
+    "auto-include-altname", "block-client-cert", "block-expired-certificate",
+    "block-timeout-cert", "block-tls13-downgrade-no-resource",
+    "block-unknown-cert", "block-unsupported-cipher", "block-unsupported-version",
+    "block-untrusted-issuer", "restrict-cert-exts", "strip-alpn",
+}
+_SSL_INBOUND_PROXY_FLAGS = {
+    "block-if-hsm-unavailable", "block-if-no-resource",
+    "block-unsupported-cipher", "block-unsupported-version",
+}
+_SSL_NO_PROXY_FLAGS = {"block-expired-certificate", "block-untrusted-issuer"}
+# All 14 PAN-OS ssl-protocol-settings toggles have SCM fields. The SDK
+# defaults them to True, so explicit 'no' must be exported as False.
+_SSL_PROTOCOL_FLAGS = {
+    "auth-algo-md5", "auth-algo-sha1", "auth-algo-sha256", "auth-algo-sha384",
+    "enc-algo-3des", "enc-algo-aes-128-cbc", "enc-algo-aes-128-gcm",
+    "enc-algo-aes-256-cbc", "enc-algo-aes-256-gcm", "enc-algo-chacha20-poly1305",
+    "enc-algo-rc4", "keyxchg-algo-dhe", "keyxchg-algo-ecdhe", "keyxchg-algo-rsa",
+}
 
 
 def export_decryption_profiles(vsys_root) -> list[dict]:
-    return _export_named_profiles(vsys_root, "decryption")
+    """Export decryption profiles with full SSL/SSH content (issue #67).
+
+    Shape mirrors pan-scm-sdk DecryptionProfileCreateModel: ssl-forward-proxy,
+    ssl-inbound-proxy, ssl-no-proxy and ssl-protocol-settings. The SDK has no
+    ssh_proxy field — PAN-OS ssh-proxy settings are exported informationally
+    and flagged with a migration note so nothing is dropped silently.
+    description is kept for fidelity even though SCM cannot store it.
+    """
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("profiles/decryption")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        d: dict = {"name": entry.get("name", "")}
+        desc = entry.findtext("description") or ""
+        if desc:
+            d["description"] = desc
+        unsupported: list[str] = []
+        for tag, dst, allowed in (
+            ("ssl-forward-proxy", "ssl_forward_proxy", _SSL_FORWARD_PROXY_FLAGS),
+            ("ssl-inbound-proxy", "ssl_inbound_proxy", _SSL_INBOUND_PROXY_FLAGS),
+            ("ssl-no-proxy", "ssl_no_proxy", _SSL_NO_PROXY_FLAGS),
+        ):
+            el = entry.find(tag)
+            if el is not None:
+                flags, unsup = _parse_flag_block(el, allowed)
+                if flags:
+                    d[dst] = flags
+                unsupported.extend(f"{tag}/{u}" for u in unsup)
+        sps = entry.find("ssl-protocol-settings")
+        if sps is not None:
+            settings: dict = {}
+            for src, dst in (("min-version", "min_version"), ("max-version", "max_version")):
+                val = sps.findtext(src)
+                if val:
+                    settings[dst] = val
+            flags, unsup = _parse_flag_block(sps, _SSL_PROTOCOL_FLAGS, keep_no=True)
+            settings.update(flags)
+            unsupported.extend(f"ssl-protocol-settings/{u}" for u in unsup)
+            if settings:
+                d["ssl_protocol_settings"] = settings
+        ssh = entry.find("ssh-proxy")
+        if ssh is not None:
+            # Informational only — the SDK has no ssh_proxy field.
+            ssh_out = {child.tag.replace("-", "_"): child.text == "yes"
+                       for child in ssh if child.text in ("yes", "no")}
+            if ssh_out:
+                d["ssh_proxy"] = ssh_out
+                unsupported.append("ssh-proxy")
+        unsupported.extend(_unsupported_tags(entry, ("forwarded-only", "disable-override")))
+        if entry.findtext("interface"):
+            unsupported.append("interface")
+        _note_unsupported(d, unsupported)
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
 
 
 def export_dns_security_profiles(vsys_root) -> list[dict]:
-    return _export_named_profiles(vsys_root, "dns-security")
+    """Export DNS-security profiles with full botnet-domains content (issue #67).
+
+    Shape mirrors pan-scm-sdk DnsSecurityProfileCreateModel: category verdicts,
+    custom lists, sinkhole and whitelist. Legacy botnet-domains
+    threat-exception / rtype-action have no SCM representation and become
+    migration notes.
+    """
+    out = []
+    if vsys_root is None:
+        return out
+    container = vsys_root.find("profiles/dns-security")
+    if container is None:
+        return out
+    for entry in container.findall("entry"):
+        d: dict = {"name": entry.get("name", "")}
+        desc = entry.findtext("description") or ""
+        if desc:
+            d["description"] = desc
+        unsupported: list[str] = []
+        botnet = entry.find("botnet-domains")
+        if botnet is not None:
+            bd: dict = {}
+            cats = []
+            for c in botnet.findall("dns-security-categories/entry"):
+                # SCM requires action per category; PAN-OS default is 'default'.
+                cat: dict = {
+                    "name": c.get("name", ""),
+                    "action": c.findtext("action") or "default",
+                }
+                for src, dst in (("log-level", "log_level"),
+                                 ("packet-capture", "packet_capture")):
+                    val = c.findtext(src)
+                    if val:
+                        cat[dst] = val
+                cats.append(cat)
+            if cats:
+                bd["dns_security_categories"] = cats
+            lists = []
+            for l in botnet.findall("lists/entry"):
+                item: dict = {"name": l.get("name", "")}
+                action = _parse_profile_action(l.find("action"))
+                if action:
+                    item["action"] = action
+                else:
+                    # SCM requires an action per list entry; don't fabricate one.
+                    unsupported.append(f"botnet-domains/lists/{item['name']}/action (missing)")
+                pc = l.findtext("packet-capture")
+                if pc:
+                    item["packet_capture"] = pc
+                lists.append(item)
+            if lists:
+                bd["lists"] = lists
+            sh = botnet.find("sinkhole")
+            if sh is not None:
+                # SCM requires both addresses; PAN-OS defaults per codegen spec.
+                ipv4 = sh.findtext("ipv4-address") or "pan-sinkhole-default-ip"
+                ipv6 = sh.findtext("ipv6-address") or "::1"
+                bd["sinkhole"] = {"ipv4_address": ipv4, "ipv6_address": ipv6}
+                # SCM only accepts the default sinkhole values — a custom IP
+                # would fail CreateModel validation, so flag it explicitly.
+                if ipv4 not in ("pan-sinkhole-default-ip", "127.0.0.1"):
+                    unsupported.append(f"botnet-domains/sinkhole/ipv4-address ({ipv4})")
+                if ipv6 != "::1":
+                    unsupported.append(f"botnet-domains/sinkhole/ipv6-address ({ipv6})")
+            wl = []
+            for w in botnet.findall("whitelist/entry"):
+                item = {"name": w.get("name", "")}
+                wdesc = w.findtext("description")
+                if wdesc:
+                    item["description"] = wdesc
+                wl.append(item)
+            if wl:
+                bd["whitelist"] = wl
+            if bd:
+                d["botnet_domains"] = bd
+            for tag in ("threat-exception", "rtype-action"):
+                el = botnet.find(tag)
+                if el is not None and len(el):
+                    unsupported.append(f"botnet-domains/{tag}")
+        unsupported.extend(_unsupported_tags(entry, ("disable-override",)))
+        _note_unsupported(d, unsupported)
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
 
 
 def export_file_blocking_profiles(vsys_root) -> list[dict]:
@@ -1584,20 +2011,163 @@ def export_file_blocking_profiles(vsys_root) -> list[dict]:
     return out
 
 
+# Zone-protection yes/no flags -> SDK field names. These are NOT a mechanical
+# dash->snake of the PAN-OS tags (pan-scm-sdk ZoneProtectionProfileCreateModel).
+_ZONE_DISCARD_FLAGS = {
+    "discard-ip-spoof": "spoofed_ip_discard",
+    "discard-ip-frag": "fragmented_traffic_discard",
+    "discard-strict-source-routing": "strict_source_routing_discard",
+    "discard-loose-source-routing": "loose_source_routing_discard",
+    "discard-timestamp": "timestamp_discard",
+    "discard-record-route": "record_route_discard",
+    "discard-security": "security_discard",
+    "discard-stream-id": "stream_id_discard",
+    "discard-unknown-option": "unknown_option_discard",
+    "discard-malformed-option": "malformed_option_discard",
+    "discard-overlapping-tcp-segment-mismatch": "mismatched_overlapping_tcp_segment_discard",
+    "discard-tcp-split-handshake": "tcp_handshake_discard",
+    "discard-tcp-syn-with-data": "tcp_syn_with_data_discard",
+    "discard-tcp-synack-with-data": "tcp_synack_with_data_discard",
+    "discard-icmp-ping-zero-id": "icmp_ping_zero_id_discard",
+    "discard-icmp-frag": "icmp_frag_discard",
+    "discard-icmp-large-packet": "icmp_large_packet_discard",
+    "discard-icmp-error": "discard_icmp_embedded_error",
+    "remove-tcp-timestamp": "tcp_timestamp_strip",
+    "strip-tcp-fast-open-and-data": "tcp_fast_open_and_data_strip",
+    "suppress-icmp-timeexceeded": "suppress_icmp_timeexceeded",
+    "suppress-icmp-needfrag": "suppress_icmp_needfrag",
+    "strict-ip-check": "strict_ip_check",
+}
+# Enum-valued zone-protection settings the SDK accepts verbatim.
+_ZONE_ENUM_FLAGS = {
+    "tcp-reject-non-syn": ("reject_non_syn_tcp", {"global", "yes", "no"}),
+    "asymmetric-path": ("asymmetric_path", {"global", "drop", "bypass"}),
+    "strip-mptcp-option": ("mptcp_option_strip", {"global", "yes", "no"}),
+}
+_ZONE_FLOOD_PROTOS = ("tcp-syn", "udp", "icmp", "icmpv6", "other-ip", "sctp-init")
+
+
 def export_zone_protection_profiles(network_root) -> list[dict]:
-    """Export zone protection profiles from network/profiles/zone-protection."""
+    """Export zone protection profiles with full content (issue #67).
+
+    Source path is network/profiles/zone-protection-profile (the PAN-OS tag
+    per pan-os-codegen; the previous 'zone-protection' path matched nothing).
+    Shape mirrors pan-scm-sdk ZoneProtectionProfileCreateModel: flood rates,
+    scan/scan-white-list, discard/strip/suppress flags, ipv6 (free-form dict
+    in the SDK), non-ip-protocol and L2 SGT protection. net-inspection has no
+    SCM representation and becomes a migration note.
+    """
     out = []
     if network_root is None:
         return out
-    container = network_root.find("profiles/zone-protection")
+    container = network_root.find("profiles/zone-protection-profile")
     if container is None:
         return out
     for entry in container.findall("entry"):
-        name = entry.get("name", "")
+        d: dict = {"name": entry.get("name", "")}
         desc = entry.findtext("description") or ""
-        d: dict = {"name": name}
         if desc:
             d["description"] = desc
+        unsupported: list[str] = []
+
+        flood_el = entry.find("flood")
+        if flood_el is not None:
+            flood: dict = {}
+            for proto in _ZONE_FLOOD_PROTOS:
+                proto_el = flood_el.find(proto)
+                if proto_el is None:
+                    continue
+                parsed = _snake_keys(_parse_flood_proto(proto_el))
+                # Zone-protection RED has no block duration (that is DoS-only);
+                # the SDK FloodRed model forbids extra keys.
+                parsed.get("red", {}).pop("block", None)
+                flood[proto.replace("-", "_")] = parsed
+            # PAN-OS models red/syn-cookies as mutually exclusive variants
+            # (codegen variant_group_id) and the SDK enforces it. If a config
+            # carries both, keep syn-cookies and flag the dropped RED rates.
+            tcp_syn = flood.get("tcp_syn", {})
+            if "red" in tcp_syn and "syn_cookies" in tcp_syn:
+                tcp_syn.pop("red")
+                unsupported.append("flood/tcp-syn/red (SCM allows only one of red/syn-cookies)")
+            if flood:
+                d["flood"] = flood
+
+        scans = []
+        for s in entry.findall("scan/entry"):
+            scan: dict = {"name": s.get("name", "")}
+            action = _parse_profile_action(s.find("action"))
+            if action:
+                scan["action"] = action
+            for key in ("interval", "threshold"):
+                val = _parse_int(s.findtext(key))
+                if val is not None:
+                    scan[key] = val
+            scans.append(scan)
+        if scans:
+            d["scan"] = scans
+        whitelist = []
+        for w in entry.findall("scan-white-list/entry"):
+            item: dict = {"name": w.get("name", "")}
+            for key in ("ipv4", "ipv6"):
+                val = w.findtext(key)
+                if val:
+                    item[key] = val
+            whitelist.append(item)
+        if whitelist:
+            d["scan_white_list"] = whitelist
+
+        for tag, field in _ZONE_DISCARD_FLAGS.items():
+            if entry.findtext(tag) == "yes":
+                d[field] = True
+        for tag, (field, values) in _ZONE_ENUM_FLAGS.items():
+            val = entry.findtext(tag)
+            if val in values:
+                d[field] = val
+            elif val is not None:
+                unsupported.append(f"{tag} ({val})")
+
+        ipv6_el = entry.find("ipv6")
+        if ipv6_el is not None and len(ipv6_el):
+            # SDK models ipv6 as Dict[str, Any] — preserve the whole block.
+            d["ipv6"] = _xml_to_dict(ipv6_el)
+
+        nip = entry.find("non-ip-protocol")
+        if nip is not None:
+            nip_out: dict = {}
+            list_type = nip.findtext("list-type")
+            if list_type:
+                nip_out["list_type"] = list_type
+            protocols = []
+            for p in nip.findall("protocol/entry"):
+                name = p.get("name", "")
+                proto_entry: dict = {
+                    "name": name,
+                    "ether_type": p.findtext("ether-type") or name,
+                }
+                enable = p.findtext("enable")
+                if enable is not None:
+                    proto_entry["enable"] = enable == "yes"
+                protocols.append(proto_entry)
+            if protocols:
+                nip_out["protocol"] = protocols
+            if nip_out:
+                d["non_ip_protocol"] = nip_out
+
+        l2 = entry.find("l2-sec-group-tag-protection")
+        if l2 is not None:
+            tags = []
+            for t in l2.findall("tags/entry"):
+                name = t.get("name", "")
+                tag_out: dict = {"name": name, "tag": t.findtext("tag") or name}
+                enable = t.findtext("enable")
+                if enable is not None:
+                    tag_out["enable"] = enable == "yes"
+                tags.append(tag_out)
+            if tags:
+                d["l2_sec_group_tag_protection"] = {"tags": tags}
+
+        unsupported.extend(_unsupported_tags(entry, ("net-inspection", "disable-override")))
+        _note_unsupported(d, unsupported)
         out.append(d)
     out.sort(key=lambda x: x["name"].lower())
     return out
