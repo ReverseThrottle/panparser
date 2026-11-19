@@ -261,3 +261,120 @@ class TestEthernetMgmtProfileAndLldp:
             # SCM interface names are $variables; scm-mcp maps the PAN-OS name.
             var_name = "$" + p["name"].replace("/", "-")
             EthernetInterfaceCreateModel(name=var_name, folder="All", **payload)
+
+
+class TestEthernetUnsupportedPerPortFields:
+    """#59 residual (criterion 3 / proposed-fix item 4).
+
+    SDK check (pan-scm-sdk 0.14.0): EthernetLayer3 has ``ndp_proxy``
+    (NdpProxyConfig, single ``enabled`` bool) but no sdwan field. So
+    ethernet ``ndp-proxy`` is exported, while ``sdwan-link-settings``
+    gets a warn-only note naming port + field — nothing dropped silently.
+    """
+
+    # Tok-shaped ethernet1/8: ndp-proxy + sdwan-link-settings under layer3.
+    # sdwan-link-settings children are opaque — the exporter never reads them.
+    TOK_XML = """
+    <interface>
+      <ethernet>
+        <entry name="ethernet1/8">
+          <layer3>
+            <ndp-proxy><enabled>no</enabled></ndp-proxy>
+            <sdwan-link-settings><enable>yes</enable></sdwan-link-settings>
+          </layer3>
+        </entry>
+        <entry name="ethernet1/7">
+          <layer3>
+            <ip><entry name="10.0.0.1/24"/></ip>
+          </layer3>
+        </entry>
+      </ethernet>
+    </interface>
+    """
+
+    def test_tok_eth1_8_ndp_exported_sdwan_warns(self):
+        parents, subs, notes = export_ethernet_interfaces(_net(self.TOK_XML))
+        assert parents[0] == {
+            "name": "ethernet1/8",
+            "layer3": {"ndp_proxy": {"enabled": False}},
+        }
+        assert subs == []
+        # Exactly one warn: sdwan-link-settings. ndp-proxy is exported, not warned.
+        assert len(notes) == 1
+        assert "ethernet1/8" in notes[0]
+        assert "sdwan-link-settings" in notes[0]
+
+    def test_port_without_unsupported_fields_byte_identical(self):
+        parents, _, notes = export_ethernet_interfaces(_net(self.TOK_XML))
+        assert parents[1] == {
+            "name": "ethernet1/7",
+            "layer3": {"ip": [{"name": "10.0.0.1/24"}]},
+        }
+        assert all("ethernet1/7" not in n for n in notes)
+
+    def test_ndp_proxy_enabled_yes(self):
+        xml = """
+        <interface><ethernet>
+          <entry name="ethernet1/3"><layer3>
+            <ndp-proxy><enabled>yes</enabled></ndp-proxy>
+          </layer3></entry>
+        </ethernet></interface>
+        """
+        parents, _, notes = export_ethernet_interfaces(_net(xml))
+        assert parents[0]["layer3"] == {"ndp_proxy": {"enabled": True}}
+        assert notes == []
+
+    def test_empty_ndp_proxy_element_still_marks_presence(self):
+        xml = """
+        <interface><ethernet>
+          <entry name="ethernet1/3"><layer3><ndp-proxy/></layer3></entry>
+        </ethernet></interface>
+        """
+        parents, _, notes = export_ethernet_interfaces(_net(xml))
+        assert parents[0]["layer3"] == {"ndp_proxy": {}}
+        assert notes == []
+
+    def test_sdwan_alone_warns_and_emits_no_key(self):
+        xml = """
+        <interface><ethernet>
+          <entry name="ethernet1/8"><layer3>
+            <sdwan-link-settings><enable>yes</enable></sdwan-link-settings>
+          </layer3></entry>
+        </ethernet></interface>
+        """
+        parents, _, notes = export_ethernet_interfaces(_net(xml))
+        assert parents == [{"name": "ethernet1/8", "layer3": {}}]
+        assert len(notes) == 1
+        assert "ethernet1/8" in notes[0]
+        assert "sdwan-link-settings" in notes[0]
+
+    def test_build_export_surfaces_sdwan_warning(self):
+        from export.writer import build_export
+
+        data = build_export(
+            ET.fromstring("<config version='11.1.0'/>"),
+            ET.fromstring("<vsys/>"),
+            None,
+            _net(self.TOK_XML),
+            "test.xml",
+            "vsys1",
+        )
+        sdwan_warns = [
+            w for w in data["migration_warnings"] if "sdwan-link-settings" in w["message"]
+        ]
+        assert len(sdwan_warns) == 1
+        assert sdwan_warns[0]["severity"] == "warn"
+        assert sdwan_warns[0]["object_path"] == "network/interfaces"
+        assert "ethernet1/8" in sdwan_warns[0]["message"]
+
+    def test_contract_with_scm_sdk(self):
+        import pytest
+
+        pytest.importorskip("scm")
+        from scm.models.network.ethernet_interface import EthernetInterfaceCreateModel
+
+        parents, _, _ = export_ethernet_interfaces(_net(self.TOK_XML))
+        for p in parents:
+            payload = {k: v for k, v in p.items() if k in ("layer2", "layer3")}
+            var_name = "$" + p["name"].replace("/", "-")
+            EthernetInterfaceCreateModel(name=var_name, folder="All", **payload)
