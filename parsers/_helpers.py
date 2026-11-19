@@ -2,6 +2,23 @@ from __future__ import annotations
 from xml.etree.ElementTree import Element
 
 
+def find_first(root: Element | None, *paths: str) -> Element | None:
+    """Return the first container that exists at any of `paths` under `root`.
+
+    Selection is by presence (`is not None`), never by Element truth value:
+    a present-but-empty primary container is SELECTED rather than falling
+    through to a legacy fallback path (#91). Returns None when `root` is
+    None or no path matches.
+    """
+    if root is None:
+        return None
+    for path in paths:
+        el = root.find(path)
+        if el is not None:
+            return el
+    return None
+
+
 def iter_entries(vsys_root: Element | None, shared_root: Element | None,
                  path: str):
     """Yield (entry, scope) for all entries at `path` under vsys and shared."""

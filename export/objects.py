@@ -6,7 +6,7 @@ The 'folder' key is intentionally omitted — the migration script supplies it a
 from __future__ import annotations
 from xml.etree.ElementTree import Element
 
-from parsers._helpers import iter_entries, get_members
+from parsers._helpers import iter_entries, get_members, find_first
 
 # ── PAN-OS color token → SCM color name ──────────────────────────────────────
 # SCM valid colors: Azure Blue, Black, Blue, Blue Gray, Blue Violet, Brown,
@@ -266,7 +266,7 @@ def export_security_rules(vsys_root) -> list[dict]:
     out = []
     if vsys_root is None:
         return out
-    container = vsys_root.find("rulebase/security/rules") or vsys_root.find("security/rules")
+    container = find_first(vsys_root, "rulebase/security/rules", "security/rules")
     if container is None:
         return out
     for rule in container.findall("entry"):
@@ -1451,7 +1451,7 @@ def export_nat_rules(vsys_root) -> list[dict]:
     out = []
     if vsys_root is None:
         return out
-    container = vsys_root.find("rulebase/nat/rules") or vsys_root.find("nat/rules")
+    container = find_first(vsys_root, "rulebase/nat/rules", "nat/rules")
     if container is None:
         return out
     for rule in container.findall("entry"):
@@ -2493,7 +2493,7 @@ def export_dos_protection_rules(vsys_root) -> list[dict]:
     out = []
     if vsys_root is None:
         return out
-    container = vsys_root.find("rulebase/dos/rules") or vsys_root.find("dos/rules")
+    container = find_first(vsys_root, "rulebase/dos/rules", "dos/rules")
     if container is None:
         return out
     for rule in container.findall("entry"):

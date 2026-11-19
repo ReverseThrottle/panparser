@@ -1,7 +1,7 @@
 """Pure data extraction — no rendering. Returns plain Python tuples for the TUI."""
 from __future__ import annotations
 from xml.etree.ElementTree import Element
-from ._helpers import iter_entries, get_members
+from ._helpers import iter_entries, get_members, find_first
 
 from .addresses import _extract_addr
 from .services import _extract_service
@@ -71,7 +71,7 @@ def get_security_rules(vsys_root) -> list[tuple]:
     rows = []
     if vsys_root is None:
         return rows
-    container = vsys_root.find("rulebase/security/rules") or vsys_root.find("security/rules")
+    container = find_first(vsys_root, "rulebase/security/rules", "security/rules")
     if container is None:
         return rows
     for i, rule in enumerate(container.findall("entry"), 1):
@@ -95,7 +95,7 @@ def get_nat_rules(vsys_root) -> list[tuple]:
     rows = []
     if vsys_root is None:
         return rows
-    container = vsys_root.find("rulebase/nat/rules") or vsys_root.find("nat/rules")
+    container = find_first(vsys_root, "rulebase/nat/rules", "nat/rules")
     if container is None:
         return rows
     for i, rule in enumerate(container.findall("entry"), 1):
@@ -305,7 +305,7 @@ def get_dos_rules(vsys_root) -> list[tuple]:
     rows = []
     if vsys_root is None:
         return rows
-    container = vsys_root.find("rulebase/dos/rules") or vsys_root.find("dos/rules")
+    container = find_first(vsys_root, "rulebase/dos/rules", "dos/rules")
     if container is None:
         return rows
     for i, rule in enumerate(container.findall("entry"), 1):
@@ -438,7 +438,7 @@ def get_decryption_rules(vsys_root) -> list[tuple]:
     rows = []
     if vsys_root is None:
         return rows
-    container = vsys_root.find("rulebase/decryption/rules") or vsys_root.find("decryption/rules")
+    container = find_first(vsys_root, "rulebase/decryption/rules", "decryption/rules")
     if container is None:
         return rows
     for i, rule in enumerate(container.findall("entry"), 1):
@@ -460,7 +460,7 @@ def get_pbf_rules(vsys_root) -> list[tuple]:
     rows = []
     if vsys_root is None:
         return rows
-    container = vsys_root.find("rulebase/pbf/rules") or vsys_root.find("pbf/rules")
+    container = find_first(vsys_root, "rulebase/pbf/rules", "pbf/rules")
     if container is None:
         return rows
     for i, rule in enumerate(container.findall("entry"), 1):
@@ -491,8 +491,7 @@ def get_app_override_rules(vsys_root) -> list[tuple]:
     rows = []
     if vsys_root is None:
         return rows
-    container = (vsys_root.find("rulebase/application-override/rules")
-                 or vsys_root.find("application-override/rules"))
+    container = find_first(vsys_root, "rulebase/application-override/rules", "application-override/rules")
     if container is None:
         return rows
     for i, rule in enumerate(container.findall("entry"), 1):
@@ -514,7 +513,7 @@ def get_auth_rules(vsys_root) -> list[tuple]:
     rows = []
     if vsys_root is None:
         return rows
-    container = vsys_root.find("rulebase/authentication/rules") or vsys_root.find("authentication/rules")
+    container = find_first(vsys_root, "rulebase/authentication/rules", "authentication/rules")
     if container is None:
         return rows
     for i, rule in enumerate(container.findall("entry"), 1):
@@ -538,7 +537,7 @@ def get_qos_rules(vsys_root) -> list[tuple]:
     rows = []
     if vsys_root is None:
         return rows
-    container = vsys_root.find("rulebase/qos/rules") or vsys_root.find("qos/rules")
+    container = find_first(vsys_root, "rulebase/qos/rules", "qos/rules")
     if container is None:
         return rows
     for i, rule in enumerate(container.findall("entry"), 1):

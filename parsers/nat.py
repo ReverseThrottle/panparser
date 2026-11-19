@@ -2,7 +2,7 @@ from __future__ import annotations
 from xml.etree.ElementTree import Element
 from rich.table import Table
 from rich import box
-from ._helpers import grep_row, get_members, fmt_any, fmt_members
+from ._helpers import grep_row, get_members, fmt_any, fmt_members, find_first
 
 
 def render_nat_rules(vsys_root: Element | None, console, grep: str | None = None) -> None:
@@ -22,7 +22,7 @@ def render_nat_rules(vsys_root: Element | None, console, grep: str | None = None
         console.print("[dim]No vsys configuration found.[/dim]")
         return
 
-    rules_container = vsys_root.find("rulebase/nat/rules") or vsys_root.find("nat/rules")
+    rules_container = find_first(vsys_root, "rulebase/nat/rules", "nat/rules")
     if rules_container is None:
         console.print("[dim]No NAT rules found.[/dim]")
         return

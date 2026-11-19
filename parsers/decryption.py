@@ -2,7 +2,7 @@ from __future__ import annotations
 from xml.etree.ElementTree import Element
 from rich.table import Table
 from rich import box
-from ._helpers import grep_row, get_members, fmt_any, fmt_members
+from ._helpers import grep_row, get_members, fmt_any, fmt_members, find_first
 
 
 def render_decryption_rules(vsys_root: Element | None, console, grep=None) -> None:
@@ -22,7 +22,7 @@ def render_decryption_rules(vsys_root: Element | None, console, grep=None) -> No
         console.print("[dim]No vsys configuration found.[/dim]")
         return
 
-    container = vsys_root.find("rulebase/decryption/rules") or vsys_root.find("decryption/rules")
+    container = find_first(vsys_root, "rulebase/decryption/rules", "decryption/rules")
     if container is None:
         console.print("[dim]No decryption rules found.[/dim]")
         return

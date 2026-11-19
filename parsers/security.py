@@ -2,7 +2,7 @@ from __future__ import annotations
 from xml.etree.ElementTree import Element
 from rich.table import Table
 from rich import box
-from ._helpers import grep_row, get_members, fmt_any, fmt_members
+from ._helpers import grep_row, get_members, fmt_any, fmt_members, find_first
 
 ACTION_COLORS = {
     "allow": "green", "deny": "red", "drop": "red",
@@ -28,7 +28,7 @@ def render_security_rules(vsys_root: Element | None, console, grep: str | None =
         console.print("[dim]No vsys configuration found.[/dim]")
         return
 
-    rules_container = vsys_root.find("rulebase/security/rules") or vsys_root.find("security/rules")
+    rules_container = find_first(vsys_root, "rulebase/security/rules", "security/rules")
     if rules_container is None:
         console.print("[dim]No security rules found.[/dim]")
         return
