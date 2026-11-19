@@ -2,7 +2,7 @@ from __future__ import annotations
 from xml.etree.ElementTree import Element
 from rich.table import Table
 from rich import box
-from ._helpers import grep_row, get_members, fmt_any, fmt_members
+from ._helpers import grep_row, get_members, fmt_any, fmt_members, find_first
 
 
 def render_app_override_rules(vsys_root: Element | None, console, grep=None) -> None:
@@ -22,8 +22,7 @@ def render_app_override_rules(vsys_root: Element | None, console, grep=None) -> 
         console.print("[dim]No vsys configuration found.[/dim]")
         return
 
-    container = (vsys_root.find("rulebase/application-override/rules")
-                 or vsys_root.find("application-override/rules"))
+    container = find_first(vsys_root, "rulebase/application-override/rules", "application-override/rules")
     if container is None:
         console.print("[dim]No application override rules found.[/dim]")
         return
