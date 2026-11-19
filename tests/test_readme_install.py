@@ -110,7 +110,9 @@ def test_readme_module_examples_are_valid_entry_points():
             f"README documents {line!r} but {source.name} has no "
             "'if __name__ == \"__main__\"' guard — `python3 -m {module}` would not run it"
         )
-        shown = set(re.findall(r"(?<!\S)--[A-Za-z][\w-]*", line))
+        # Left boundary excludes word chars/hyphens (not just non-whitespace)
+        # so bracketed synopsis flags like `[--vsys VSYS]` are checked too.
+        shown = set(re.findall(r"(?<![\w-])--[A-Za-z][\w-]*", line))
         accepted = _long_flags_accepted(source)
         unknown = shown - accepted
         assert not unknown, (
