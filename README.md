@@ -16,7 +16,7 @@ git clone https://github.com/ReverseThrottle/panparser.git
 cd panparser
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -r requirements.txt
 ```
 
 ---
@@ -222,23 +222,16 @@ re-enabled in SCM.
 
 ```
 panparser/
+├── panparser.py          # CLI entry point (python3 -m panparser)
+├── tui.py                # Interactive TUI (Textual)
+├── requirements.txt      # Runtime dependencies (rich, textual)
 ├── export/
 │   ├── objects.py        # All per-section export functions
 │   └── writer.py         # Assembles full export dict, writes JSON, prints summary
-├── parsers/
+├── parsers/              # Per-section XML parsers and renderers
 │   ├── _helpers.py       # Shared XML utilities (get_members, iter_entries, etc.)
-│   ├── addresses.py
-│   ├── applications.py
-│   ├── dos.py
-│   ├── interfaces.py
-│   ├── nat.py
-│   ├── profiles.py
-│   ├── routing.py
-│   ├── security.py
-│   ├── services.py
-│   ├── tags.py
-│   └── zones.py
-├── pyproject.toml
+│   └── …                 # addresses, security, nat, interfaces, routing, …
+├── tests/                # pytest suite
 └── README.md
 ```
 
