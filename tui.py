@@ -47,6 +47,7 @@ from parsers._data import (
     get_ssl_profiles,
     get_tags,
     get_url_categories,
+    get_vlans,
     get_zone_protection,
     get_zones,
 )
@@ -145,6 +146,15 @@ SECTIONS: list[dict[str, Any]] = [
         "roots": "network",
         "row_fn": lambda i, r: (r[0], r[1], r[2], r[3], r[4]),
         "detail_keys": ["Name", "Type", "IP / Mode", "Subinterfaces", "Comment"],
+    },
+    {
+        "id": "vlans",
+        "title": "VLANs",
+        "columns": ["Name", "VLAN Interface (SVI)", "Layer2 Members"],
+        "getter": "get_vlans",
+        "roots": "network",
+        "row_fn": lambda i, r: (r[0], r[1], r[2]),
+        "detail_keys": ["Name", "VLAN Interface (SVI)", "Layer2 Members"],
     },
     {
         "id": "routing",
@@ -392,6 +402,7 @@ GETTERS = {
     "get_dos_rules": get_dos_rules,
     "get_zones": get_zones,
     "get_interfaces": get_interfaces,
+    "get_vlans": get_vlans,
     "get_routing": get_routing,
     "get_tags": get_tags,
     "get_profiles": get_profiles,

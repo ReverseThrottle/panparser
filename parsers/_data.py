@@ -177,6 +177,23 @@ def get_interfaces(network_root) -> list[tuple]:
     return rows
 
 
+def get_vlans(network_root) -> list[tuple]:
+    """(name, svi, members_str) — VLAN objects under network/vlan."""
+    rows = []
+    if network_root is None:
+        return rows
+    container = network_root.find("vlan")
+    if container is None:
+        return rows
+    for entry in container.findall("entry"):
+        name = entry.get("name", "")
+        svi = entry.findtext("virtual-interface/interface") or ""
+        members = ", ".join(get_members(entry, "interface/member"))
+        rows.append((name, svi, members))
+    rows.sort(key=lambda r: r[0].lower())
+    return rows
+
+
 def get_routing(network_root) -> list[tuple]:
     """(vr_name, route_name, dest, nexthop, iface, metric, admin_dist)"""
     rows = []

@@ -849,6 +849,32 @@ def export_vlan_interfaces(network_root: Element | None) -> tuple[list[dict], li
     return out, notes
 
 
+def export_vlan_objects(network_root: Element | None) -> list[dict]:
+    """VLAN objects: network/vlan/entry binds Layer2 members to an SVI.
+
+    Distinct from export_vlan_interfaces, which exports the SVI units
+    themselves (network/interface/vlan). Each object carries the SVI
+    reference (virtual-interface/interface) and its Layer2 member list
+    (interface/member). 'interfaces' is always present (possibly empty)
+    so the shared member-reconciliation machinery applies uniformly.
+    """
+    if network_root is None:
+        return []
+    container = network_root.find("vlan")
+    if container is None:
+        return []
+    out: list[dict] = []
+    for entry in container.findall("entry"):
+        d: dict = {"name": entry.get("name", "")}
+        svi = entry.findtext("virtual-interface/interface")
+        if svi:
+            d["virtual_interface"] = svi
+        d["interfaces"] = get_members(entry, "interface/member")
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
 def export_ethernet_interfaces(
     network_root: Element | None,
 ) -> tuple[list[dict], list[dict], list[str]]:

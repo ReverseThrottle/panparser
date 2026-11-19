@@ -35,6 +35,7 @@ from export.objects import (
     export_loopback_interfaces,
     export_tunnel_interfaces,
     export_vlan_interfaces,
+    export_vlan_objects,
     export_ethernet_interfaces,
     export_aggregate_interfaces,
     export_layer2_subinterfaces,
@@ -224,6 +225,7 @@ def build_export(
     ipsec_tunnels         = export_ipsec_tunnels(network_root)
     lldp_profiles           = export_lldp_profiles(network_root)
     virtual_wires           = export_virtual_wires(network_root)
+    vlan_objects            = export_vlan_objects(network_root)
     qos_profiles            = export_qos_interface_profiles(network_root)
     dhcp_servers            = export_dhcp_servers(network_root)
     interface_mgmt_profiles = export_interface_management_profiles(network_root)
@@ -272,6 +274,33 @@ def build_export(
         "virtual router",
         "network/virtual_routers",
     ))
+    warnings.extend(_reconcile_interface_members(
+        vlan_objects,
+        known_interfaces,
+        normalized_bare_interfaces,
+        "vlan",
+        "network/vlans",
+    ))
+    # Reconcile each VLAN object's SVI reference through the same shared
+    # machinery (single-member probe), so bare-parent normalization — e.g.
+    # the bare 'vlan' → 'vlan.1' rewrite from #58 — applies here identically
+    # to zone/VR members without duplicating that logic.
+    for vlan in vlan_objects:
+        svi = vlan.get("virtual_interface")
+        if not svi:
+            continue
+        probe = {"name": vlan["name"], "interfaces": [svi]}
+        warnings.extend(_reconcile_interface_members(
+            [probe],
+            known_interfaces,
+            normalized_bare_interfaces,
+            "vlan object",
+            "network/vlans",
+        ))
+        if probe["interfaces"]:
+            vlan["virtual_interface"] = probe["interfaces"][0]
+        else:
+            del vlan["virtual_interface"]
 
     anti_spyware_profiles           = export_anti_spyware_profiles(vsys_root)
     wildfire_antivirus_profiles     = export_wildfire_antivirus_profiles(vsys_root)
@@ -434,6 +463,23 @@ def build_export(
                 "device management after migration."
             ),
         })
+    if vlan_objects:
+        _vlan_mappings = "; ".join(
+            f"{v['name']} → SVI {v.get('virtual_interface', 'none')}, "
+            f"members: {', '.join(v['interfaces']) or 'none'}"
+            for v in vlan_objects
+        )
+        warnings.append({
+            "severity": "warn",
+            "object_path": "network/vlans",
+            "message": (
+                f"{len(vlan_objects)} VLAN object(s) exported for reference "
+                f"({_vlan_mappings}). SCM's folder-scoped API has no VLAN-object "
+                "equivalent — the VLAN-to-SVI and Layer2 member bindings are "
+                "device-scoped. Recreate these mappings manually in SCM device "
+                "management after migration."
+            ),
+        })
     if qos_profiles:
         warnings.append({
             "severity": "info",
@@ -588,6 +634,7 @@ def build_export(
             "ipsec_tunnels": ipsec_tunnels,
             "lldp_profiles": lldp_profiles,
             "virtual_wires": virtual_wires,
+            "vlans": vlan_objects,
             "qos_profiles": qos_profiles,
             "dhcp_servers": dhcp_servers,
             "interface_management_profiles": interface_mgmt_profiles,
@@ -716,6 +763,7 @@ def write_export(data: dict, output_path: str) -> None:
         f"{len(net.get('ipsec_tunnels', []))} ipsec_tunnel  "
         f"{len(net.get('lldp_profiles', []))} lldp_profile  "
         f"{len(net.get('virtual_wires', []))} virtual_wire  "
+        f"{len(net.get('vlans', []))} vlan_obj  "
         f"{len(net.get('qos_profiles', []))} qos_profile  "
         f"{len(net.get('dhcp_servers', []))} dhcp_server  "
         f"{len(ifaces.get('loopback', []))} loopback  "
