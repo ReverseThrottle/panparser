@@ -272,7 +272,7 @@ python -m pytest tests/ -rs
   test (`tests/test_readme_install.py`) fails if the two drift apart.
 - Without `pan-scm-sdk` installed, the 7 SDK contract tests **skip** instead of
   running; `-rs` makes those skips visible in the summary.
-- CI runs the suite on Python 3.10, 3.11 and 3.12, guarding the
+- CI runs the suite on Python 3.10, 3.11, 3.12, 3.13 and 3.14, guarding the
   "Python 3.10+" claim above.
 
 ---
