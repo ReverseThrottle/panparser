@@ -23,9 +23,11 @@ guarded in test_tui_smoke.py / test_data_getters.py.
 from __future__ import annotations
 
 import importlib
+import io
 from pathlib import Path
 
 import pytest
+from rich.console import Console
 
 from parsers import (
     addresses,
@@ -62,6 +64,7 @@ from parsers import (
     zone_protection,
     zones,
 )
+from parsers._helpers import scope_label
 from viewer_harness import render_text, sample_roots_for
 
 # (module, render_fn, roots spec, populated markers, empty-state message)
@@ -278,6 +281,66 @@ def test_zones_renderer_reads_vsys_root_not_network():
     vsys, shared, network = sample_roots_for("vsn")
     assert "trust" in render_text(zones.render_zones, vsys)
     assert "trust" not in render_text(zones.render_zones, network)
+
+
+# (#115) Every renderer that labels shared rows via scope_label — table
+# Scope cells and tree branch labels — paired with one shared-row marker
+# from the sample fixture.
+SCOPE_LABEL_CASES = [
+    (addresses.render_addresses, "shared-dns"),
+    (addresses.render_address_groups, "grp-shared"),
+    (applications.render_applications, "app-shared"),
+    (applications.render_application_groups, "app-grp-shared"),
+    (applications.render_application_filters, "app-filter-shared"),
+    (profiles.render_profiles, "av-shared"),
+    (services.render_services, "svc-shared-ntp"),
+    (services.render_service_groups, "svc-grp-shared"),
+    (tags.render_tags, "tag-global"),
+]
+
+
+@pytest.mark.parametrize("fn,shared_marker", SCOPE_LABEL_CASES,
+                         ids=[fn.__name__ for fn, _ in SCOPE_LABEL_CASES])
+def test_shared_scope_cell_renders_literal_label(fn, shared_marker):
+    """#115 regression: the shared row must render a literal "[shared]"
+    label. scope_label's unescaped "[dim][shared][/dim]" let Rich swallow
+    "[shared]" as a style tag, blanking the Scope cell in every section.
+    Asserted on rendered text (render_text), not the helper's raw markup
+    string — a markup-string assertion would keep passing with the bug.
+    vsys rows stay blank (implicit default scope, by design)."""
+    vsys, shared = sample_roots_for("vs")
+    text = render_text(fn, vsys, shared)
+    rows = [line for line in text.splitlines() if shared_marker in line]
+    assert rows, f"{fn.__name__}: shared row {shared_marker!r} missing\n{text}"
+    assert any("[shared]" in line for line in rows), (
+        f"{fn.__name__}: shared row has no literal [shared] label\n{text}")
+    vsys_only = render_text(fn, vsys, None)
+    assert "[shared]" not in vsys_only
+
+
+def test_scope_label_cases_cover_every_caller():
+    """Structural guard (#115): every parsers/ module calling scope_label
+    must have a case above, so a new section can't silently reintroduce
+    the blank-cell bug (same pattern as test_every_renderer_module_has_a_test)."""
+    parsers_dir = Path(__file__).resolve().parent.parent / "parsers"
+    callers = {p.stem for p in parsers_dir.glob("*.py")
+               if p.stem != "_helpers" and "scope_label(" in p.read_text()}
+    covered = {fn.__module__.split(".")[-1] for fn, _ in SCOPE_LABEL_CASES}
+    assert covered == callers, f"untested scope_label callers: {callers - covered}"
+
+
+def test_scope_label_renders_dim_literal_brackets():
+    """#115: the shared label is dim-styled literal text and vsys is "".
+    Rendered through a real Rich console with ANSI output so the assertion
+    covers style + text, not the markup source string."""
+    buf = io.StringIO()
+    console = Console(file=buf, width=80, force_terminal=True,
+                      color_system="standard", highlight=False)
+    console.print(scope_label("shared"))
+    out = buf.getvalue()
+    assert "[shared]" in out
+    assert "\x1b[2m" in out  # SGR dim
+    assert scope_label("vsys") == ""
 
 
 def test_renderer_modules_importable():
