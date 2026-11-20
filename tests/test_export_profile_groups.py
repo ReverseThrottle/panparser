@@ -14,6 +14,9 @@ class TestExportProfileGroups:
         assert export_profile_groups(None, None) == []
 
     def test_full_field_map(self):
+        # #111 keep-vs-drop pin: data_filtering stays in the exported group
+        # (documentation only — the profile itself is never exported; see
+        # tests/test_export_data_filtering_warning.py for the warning).
         root = vsys_root("""
         <profile-group>
           <entry name="full">
