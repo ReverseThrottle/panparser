@@ -274,6 +274,9 @@ python -m pytest tests/ -rs
   running; `-rs` makes those skips visible in the summary.
 - CI runs the suite on Python 3.10, 3.11, 3.12, 3.13 and 3.14, guarding the
   "Python 3.10+" claim above.
+- A dedicated `floors` CI job installs the exact declared dependency minimums
+  from `requirements.txt` (textual 0.80.0 + rich 13.3.3) on Python 3.10 and
+  runs the suite, guarding the package support floor (#101).
 
 ---
 

@@ -1,2 +1,6 @@
-rich>=13.0.0
+# Declared support minimums (#101) — simultaneously installable and guarded
+# by the "floors" CI job, which installs these exact versions and runs the
+# suite. textual 0.80.0 itself requires rich>=13.3.3, so 13.3.3 (not 13.0.0)
+# is the true rich floor; verified green: textual==0.80.0 + rich==13.3.3.
+rich>=13.3.3
 textual>=0.80.0
