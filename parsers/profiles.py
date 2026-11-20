@@ -14,6 +14,8 @@ PROFILE_TYPES = [
     ("wildfire-analysis", "WildFire Analysis"),
     ("data-filtering", "Data Filtering"),
     ("dos-protection", "DoS Protection"),
+    ("decryption", "Decryption"),
+    ("dns-security", "DNS Security"),
 ]
 
 
@@ -84,6 +86,34 @@ def _summarize_profile(entry: Element, xml_key: str) -> str:
         if resource is not None:
             parts.append("resource-protection")
         return ", ".join(parts)
+    if xml_key == "decryption":
+        # Which SSL/SSH content blocks are present (same style as
+        # dos-protection). Covers all five blocks the #67 exporter carries,
+        # so a populated profile never renders an empty summary.
+        parts = [tag for tag in ("ssl-forward-proxy", "ssl-inbound-proxy",
+                                 "ssl-no-proxy", "ssl-protocol-settings",
+                                 "ssh-proxy")
+                 if entry.find(tag) is not None]
+        return ", ".join(parts)
+    if xml_key == "dns-security":
+        botnet = entry.find("botnet-domains")
+        if botnet is None:
+            return ""
+        parts = []
+        categories = len(botnet.findall("dns-security-categories/entry"))
+        lists = len(botnet.findall("lists/entry"))
+        whitelist = len(botnet.findall("whitelist/entry"))
+        if categories:
+            parts.append(f"{categories} category(s)")
+        if lists:
+            parts.append(f"{lists} list(s)")
+        if botnet.find("sinkhole") is not None:
+            parts.append("sinkhole")
+        if whitelist:
+            parts.append(f"{whitelist} whitelist")
+        # Legacy-only botnet-domains (threat-exception / rtype-action) is
+        # still populated content — never render an empty summary for it.
+        return ", ".join(parts) if parts else "botnet-domains"
     return ""
 
 

@@ -110,6 +110,51 @@ def test_zones_tab_populated_from_vsys_root():
     run_app_test(_app_factory, body)
 
 
+def test_profiles_tab_shows_decryption_and_dns_security():
+    """#112: the Profiles tab lists decryption + dns-security from vsys AND
+    shared with non-empty summaries, and the detail bar labels the RAW
+    getter row in getter order (#90 contract: Profile Type, Scope, Name,
+    Summary, Description — row_fn must stay aligned with detail_keys)."""
+
+    async def body(app, pilot):
+        await pilot.pause()
+        tc = app.query_one(TabbedContent)
+        tc.active = "tab-profiles"
+        await pilot.pause()
+        rows = app._section_data["profiles"]
+        new_rows = [r for r in rows if r[0] in ("Decryption", "DNS Security")]
+        assert {(r[0], r[1], r[2]) for r in new_rows} == {
+            ("Decryption", "vsys", "decrypt-profile"),
+            ("Decryption", "shared", "decrypt-shared"),
+            ("DNS Security", "vsys", "dns-default"),
+            ("DNS Security", "shared", "dns-shared"),
+        }
+        # Populated profiles must not render an empty summary.
+        assert all(r[3] for r in new_rows)
+        dt = app.query_one("#dt-profiles", DataTable)
+        assert dt.row_count == len(rows)
+        # Highlight the vsys decryption row; check display + detail-bar
+        # alignment against the raw getter schema, independent of detail_keys.
+        idx = next(i for i, r in enumerate(rows) if r[2] == "decrypt-profile")
+        await pilot.press("escape")  # focus the profiles table
+        for _ in range(idx):
+            await pilot.press("down")
+        await pilot.pause()
+        raw = rows[idx]
+        assert [str(c) for c in dt.get_row_at(idx)] == list(raw)
+        detail = str(app.query_one("#detail-bar", Static).render())
+        assert detail.startswith(
+            "Profile Type: Decryption  |  Scope: vsys  |  Name: decrypt-profile"
+        )
+        assert f"Summary: {raw[3]}" in detail
+        assert f"Description: {raw[4]}" in detail
+        # A scope/type swap (the #90 bug class) must not pass silently.
+        assert "Scope: Decryption" not in detail
+        assert "Name: vsys" not in detail
+
+    run_app_test(_app_factory, body)
+
+
 def test_filter_binding_narrows_rows_and_r_resets():
     async def body(app, pilot):
         await pilot.pause()
