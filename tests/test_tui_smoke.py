@@ -57,7 +57,9 @@ def test_app_composes_and_populates_every_section():
             assert dt.row_count == len(app._section_data[sec["id"]])
         # Default active section is the first registry entry (addresses).
         assert app._active_section_id == "addresses"
-        assert app.query_one("#row-count", Static).render() == "6 rows"
+        # str() normalizes render(): textual 0.80 returns a rich Text, 8.x a
+        # str — same style as the detail-bar assertions below (#101).
+        assert str(app.query_one("#row-count", Static).render()) == "6 rows"
         assert "vsys1" in app.title
         # Textual auto-focuses the first focusable widget: the filter input.
         assert app.focused is app.query_one("#filter-input", Input)
@@ -76,7 +78,7 @@ def test_every_tab_activates_without_exception():
             dt = app.query_one(f"#dt-{sec['id']}", DataTable)
             n = len(app._section_data[sec["id"]])
             assert dt.row_count == n
-            assert app.query_one("#row-count", Static).render() == f"{n} rows"
+            assert str(app.query_one("#row-count", Static).render()) == f"{n} rows"
 
     run_app_test(_app_factory, body)
 
@@ -95,7 +97,7 @@ def test_zones_tab_populated_from_vsys_root():
         await pilot.pause()
         dt = app.query_one("#dt-zones", DataTable)
         assert dt.row_count > 0
-        assert app.query_one("#row-count", Static).render() == f"{dt.row_count} rows"
+        assert str(app.query_one("#row-count", Static).render()) == f"{dt.row_count} rows"
         # Exact rows from the sample config's vsys1 (sorted by name).
         assert dt.row_count == 2
         assert [str(c) for c in dt.get_row_at(0)] == [
@@ -128,13 +130,13 @@ def test_filter_binding_narrows_rows_and_r_resets():
         await pilot.press(*"host-web")
         await pilot.pause()
         assert dt.row_count == 1
-        assert app.query_one("#row-count", Static).render() == "1/6 rows"
+        assert str(app.query_one("#row-count", Static).render()) == "1/6 rows"
 
         # A needle matching nothing empties the table without raising.
         await pilot.press(*"zzz")
         await pilot.pause()
         assert dt.row_count == 0
-        assert app.query_one("#row-count", Static).render() == "0/6 rows"
+        assert str(app.query_one("#row-count", Static).render()) == "0/6 rows"
 
         # "r" (from table focus) clears the filter and refocuses the input.
         await pilot.press("escape")
@@ -163,7 +165,7 @@ def test_filter_applies_to_active_tab_only():
         await pilot.pause()
         sec_dt = app.query_one("#dt-security", DataTable)
         assert sec_dt.row_count == 1  # deny-all only
-        assert app.query_one("#row-count", Static).render() == "1/3 rows"
+        assert str(app.query_one("#row-count", Static).render()) == "1/3 rows"
         # Other tabs keep their full row sets.
         assert app.query_one("#dt-addresses", DataTable).row_count == 6
 
@@ -282,7 +284,7 @@ def test_app_composes_on_empty_config():
         for sec in tui.SECTIONS:
             dt = app.query_one(f"#dt-{sec['id']}", DataTable)
             assert dt.row_count == 0
-        assert app.query_one("#row-count", Static).render() == "0 rows"
+        assert str(app.query_one("#row-count", Static).render()) == "0 rows"
         # Filter + tab switching still work with no data.
         tc = app.query_one(TabbedContent)
         tc.active = "tab-routing"
