@@ -37,3 +37,33 @@ jobs:
 
       - name: Run tests
         run: python -m pytest tests/ -rs
+
+  # Package-minimum analogue of the interpreter matrix (#101): install the
+  # exact declared floors from requirements.txt and run the full suite, so
+  # dependency-floor drift is caught automatically. Runs on the interpreter
+  # floor (3.10) to guard the joint minimum support corner.
+  floors:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      # Derive the pins from requirements.txt (>= rewritten to ==) instead of
+      # hardcoding a second copy — the floors stay in sync with the declared
+      # support surface by construction.
+      - name: Install exact declared dependency floors
+        run: |
+          python -m pip install --upgrade pip
+          sed 's/>=/==/g' requirements.txt > "$RUNNER_TEMP/floors.txt"
+          pip install -r "$RUNNER_TEMP/floors.txt"
+          pip install pytest "pan-scm-sdk==0.14.0"
+          pip list | grep -Ei '^(rich|textual) '
+
+      - name: Verify pan-scm-sdk is importable
+        run: python -c "import scm"
+
+      - name: Run tests at the declared floors
+        run: python -m pytest tests/ -rs
