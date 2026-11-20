@@ -250,7 +250,14 @@ def main() -> None:
     # --output: write JSON export and exit; do not start the display pipeline
     if args.output:
         from export.writer import build_export, write_export
-        if os.path.exists(args.output) and not args.force:
+        # Overwrite guard applies to existing files only. A directory is never
+        # overwriteable, so don't advise --force for it — let write_export raise
+        # IsADirectoryError, caught below as a clean boundary error (issue #99).
+        if (
+            os.path.exists(args.output)
+            and not os.path.isdir(args.output)
+            and not args.force
+        ):
             print(
                 f"Error: '{args.output}' already exists. Use --force to overwrite.",
                 file=sys.stderr,
@@ -260,7 +267,14 @@ def main() -> None:
             root, vsys_root, shared_root, network_root,
             source_file=args.config, vsys=args.vsys,
         )
-        write_export(data, args.output)
+        try:
+            write_export(data, args.output)
+        except OSError as e:
+            # Unwritable destination (missing parent dir, directory, permission
+            # denied, etc.) — clean one-line boundary error, not a raw traceback,
+            # mirroring load_config's input-side handling (issues #81, #99).
+            print(f"Error: cannot write export file: {e}", file=sys.stderr)
+            sys.exit(1)
         sys.exit(0)
 
     sections = args.sections or SECTIONS
