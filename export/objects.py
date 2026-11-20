@@ -1715,20 +1715,18 @@ def _note_unsupported(obj: dict, unsupported: list[str]) -> None:
         )
 
 
-def export_anti_spyware_profiles(vsys_root) -> list[dict]:
+def export_anti_spyware_profiles(vsys_root, shared_root=None) -> list[dict]:
     """Export anti-spyware profiles with full rule/exception content (issue #67).
 
     Shape mirrors pan-scm-sdk AntiSpywareProfileCreateModel. Legacy
     botnet-domains and disable-override have no SCM representation and are
     surfaced as migration notes instead of being dropped silently.
+
+    Merges vsys and shared scopes (vsys entries first, issue #107); same-name
+    entries in both scopes are both kept, like the other shared-merged exporters.
     """
     out = []
-    if vsys_root is None:
-        return out
-    container = vsys_root.find("profiles/spyware")
-    if container is None:
-        return out
-    for entry in container.findall("entry"):
+    for entry, _ in iter_entries(vsys_root, shared_root, "profiles/spyware"):
         d: dict = {"name": entry.get("name", "")}
         desc = entry.findtext("description") or ""
         if desc:
@@ -1799,20 +1797,21 @@ _DEFAULT_WILDFIRE_RULE = {
 }
 
 
-def list_antivirus_profile_names(vsys_root) -> list[str]:
-    """Names of PAN-OS Antivirus profiles (``profiles/virus``), sorted."""
-    if vsys_root is None:
-        return []
-    container = vsys_root.find("profiles/virus")
-    if container is None:
-        return []
+def list_antivirus_profile_names(vsys_root, shared_root=None) -> list[str]:
+    """Names of PAN-OS Antivirus profiles (``profiles/virus``), sorted.
+
+    Merges vsys and shared scopes (vsys entries first, issue #107); same-name
+    entries in both scopes are both listed, like the other shared-merged
+    exporters (no dedupe).
+    """
     return sorted(
-        (e.get("name", "") for e in container.findall("entry")),
+        (e.get("name", "")
+         for e, _ in iter_entries(vsys_root, shared_root, "profiles/virus")),
         key=str.lower,
     )
 
 
-def list_wildfire_profile_names(vsys_root) -> list[str]:
+def list_wildfire_profile_names(vsys_root, shared_root=None) -> list[str]:
     """Names of PAN-OS WildFire Analysis profiles (``profiles/wildfire-analysis``), sorted.
 
     Companion to ``list_antivirus_profile_names`` for reconciling the #65
@@ -1820,19 +1819,20 @@ def list_wildfire_profile_names(vsys_root) -> list[str]:
     also listed here is skipped by ``export_wildfire_antivirus_profiles``
     (the WildFire definition wins), so it is NOT exported with a default
     WildFire rule (#108).
+
+    Merges vsys and shared scopes (vsys entries first, issue #107), same as
+    ``list_antivirus_profile_names``, so the set-difference reconciliation
+    stays accurate for shared collisions. Same-name entries in both scopes
+    are both listed (no dedupe).
     """
-    if vsys_root is None:
-        return []
-    container = vsys_root.find("profiles/wildfire-analysis")
-    if container is None:
-        return []
     return sorted(
-        (e.get("name", "") for e in container.findall("entry")),
+        (e.get("name", "")
+         for e, _ in iter_entries(vsys_root, shared_root, "profiles/wildfire-analysis")),
         key=str.lower,
     )
 
 
-def export_wildfire_antivirus_profiles(vsys_root) -> list[dict]:
+def export_wildfire_antivirus_profiles(vsys_root, shared_root=None) -> list[dict]:
     """Export WildFire and Antivirus profiles for SCM's combined profile type.
 
     PAN-OS keeps Antivirus (``profiles/virus``) and WildFire Analysis
@@ -1844,28 +1844,30 @@ def export_wildfire_antivirus_profiles(vsys_root) -> list[dict]:
     caller as a manual review item. If a name exists in both, the WildFire
     definition wins.
 
+    Merges vsys and shared scopes (vsys entries first, issue #107). The
+    WildFire-wins collision policy applies across scopes: a virus entry whose
+    name matches any wildfire-analysis entry (vsys or shared) is skipped.
+    Same-name wildfire entries in both scopes are both kept, like the other
+    shared-merged exporters (no dedupe).
+
     SCM WildfireAvProfileCreateModel requires at least one rule; a default is added if none found.
     """
     out = []
-    if vsys_root is None:
-        return out
-    wildfire_names: set[str] = set()
-    container = vsys_root.find("profiles/wildfire-analysis")
-    entries = container.findall("entry") if container is not None else []
-    for entry in entries:
-        wildfire_names.add(entry.get("name", ""))
-    virus_container = vsys_root.find("profiles/virus")
-    if virus_container is not None:
-        for entry in virus_container.findall("entry"):
-            name = entry.get("name", "")
-            if name in wildfire_names:
-                continue
-            d: dict = {"name": name, "rules": [dict(_DEFAULT_WILDFIRE_RULE)]}
-            desc = entry.findtext("description") or ""
-            if desc:
-                d["description"] = desc
-            out.append(d)
-    for entry in entries:
+    wildfire_entries = [
+        entry for entry, _ in
+        iter_entries(vsys_root, shared_root, "profiles/wildfire-analysis")
+    ]
+    wildfire_names = {entry.get("name", "") for entry in wildfire_entries}
+    for entry, _ in iter_entries(vsys_root, shared_root, "profiles/virus"):
+        name = entry.get("name", "")
+        if name in wildfire_names:
+            continue
+        d: dict = {"name": name, "rules": [dict(_DEFAULT_WILDFIRE_RULE)]}
+        desc = entry.findtext("description") or ""
+        if desc:
+            d["description"] = desc
+        out.append(d)
+    for entry in wildfire_entries:
         name = entry.get("name", "")
         desc = entry.findtext("description") or ""
         rules = []
@@ -1894,11 +1896,14 @@ def export_wildfire_antivirus_profiles(vsys_root) -> list[dict]:
     return out
 
 
-def export_vulnerability_protection_profiles(vsys_root) -> list[dict]:
+def export_vulnerability_protection_profiles(vsys_root, shared_root=None) -> list[dict]:
     """Export vulnerability protection profiles including rules.
 
     SCM requires: name, severity, host, cve, vendor_id, category, threat_name per rule.
     A default rule is added if none found. Complex action fields are skipped — review in SCM.
+
+    Merges vsys and shared scopes (vsys entries first, issue #107); same-name
+    entries in both scopes are both kept, like the other shared-merged exporters.
     """
     _DEFAULT_VULN_RULE = {
         "name": "default", "severity": ["any"], "host": "any",
@@ -1911,12 +1916,7 @@ def export_vulnerability_protection_profiles(vsys_root) -> list[dict]:
         "phishing", "protocol-anomaly", "scan", "sql-injection",
     }
     out = []
-    if vsys_root is None:
-        return out
-    container = vsys_root.find("profiles/vulnerability")
-    if container is None:
-        return out
-    for entry in container.findall("entry"):
+    for entry, _ in iter_entries(vsys_root, shared_root, "profiles/vulnerability"):
         name = entry.get("name", "").replace(" ", "-")
         desc = entry.findtext("description") or ""
         rules = []
@@ -1992,7 +1992,7 @@ def _parse_credential_enforcement(ce: Element) -> tuple[dict, list[str]]:
     return out, unsupported
 
 
-def export_url_access_profiles(vsys_root) -> list[dict]:
+def export_url_access_profiles(vsys_root, shared_root=None) -> list[dict]:
     """Export URL-filtering profiles with full content (issue #67).
 
     Shape mirrors pan-scm-sdk UrlAccessProfileCreateModel: category action
@@ -2000,14 +2000,12 @@ def export_url_access_profiles(vsys_root) -> list[dict]:
     category exceptions. enable-container-page, http-header-insertion,
     override and disable-override have no SCM representation and become
     migration notes.
+
+    Merges vsys and shared scopes (vsys entries first, issue #107); same-name
+    entries in both scopes are both kept, like the other shared-merged exporters.
     """
     out = []
-    if vsys_root is None:
-        return out
-    container = vsys_root.find("profiles/url-filtering")
-    if container is None:
-        return out
-    for entry in container.findall("entry"):
+    for entry, _ in iter_entries(vsys_root, shared_root, "profiles/url-filtering"):
         d: dict = {"name": entry.get("name", "")}
         desc = entry.findtext("description") or ""
         if desc:
@@ -2065,7 +2063,7 @@ _SSL_PROTOCOL_FLAGS = {
 }
 
 
-def export_decryption_profiles(vsys_root) -> list[dict]:
+def export_decryption_profiles(vsys_root, shared_root=None) -> list[dict]:
     """Export decryption profiles with full SSL/SSH content (issue #67).
 
     Shape mirrors pan-scm-sdk DecryptionProfileCreateModel: ssl-forward-proxy,
@@ -2073,14 +2071,12 @@ def export_decryption_profiles(vsys_root) -> list[dict]:
     ssh_proxy field — PAN-OS ssh-proxy settings are exported informationally
     and flagged with a migration note so nothing is dropped silently.
     description is kept for fidelity even though SCM cannot store it.
+
+    Merges vsys and shared scopes (vsys entries first, issue #107); same-name
+    entries in both scopes are both kept, like the other shared-merged exporters.
     """
     out = []
-    if vsys_root is None:
-        return out
-    container = vsys_root.find("profiles/decryption")
-    if container is None:
-        return out
-    for entry in container.findall("entry"):
+    for entry, _ in iter_entries(vsys_root, shared_root, "profiles/decryption"):
         d: dict = {"name": entry.get("name", "")}
         desc = entry.findtext("description") or ""
         if desc:
@@ -2126,21 +2122,19 @@ def export_decryption_profiles(vsys_root) -> list[dict]:
     return out
 
 
-def export_dns_security_profiles(vsys_root) -> list[dict]:
+def export_dns_security_profiles(vsys_root, shared_root=None) -> list[dict]:
     """Export DNS-security profiles with full botnet-domains content (issue #67).
 
     Shape mirrors pan-scm-sdk DnsSecurityProfileCreateModel: category verdicts,
     custom lists, sinkhole and whitelist. Legacy botnet-domains
     threat-exception / rtype-action have no SCM representation and become
     migration notes.
+
+    Merges vsys and shared scopes (vsys entries first, issue #107); same-name
+    entries in both scopes are both kept, like the other shared-merged exporters.
     """
     out = []
-    if vsys_root is None:
-        return out
-    container = vsys_root.find("profiles/dns-security")
-    if container is None:
-        return out
-    for entry in container.findall("entry"):
+    for entry, _ in iter_entries(vsys_root, shared_root, "profiles/dns-security"):
         d: dict = {"name": entry.get("name", "")}
         desc = entry.findtext("description") or ""
         if desc:
@@ -2213,15 +2207,14 @@ def export_dns_security_profiles(vsys_root) -> list[dict]:
     return out
 
 
-def export_file_blocking_profiles(vsys_root) -> list[dict]:
-    """Export file blocking profiles including rules (rules are simple enough to extract)."""
+def export_file_blocking_profiles(vsys_root, shared_root=None) -> list[dict]:
+    """Export file blocking profiles including rules (rules are simple enough to extract).
+
+    Merges vsys and shared scopes (vsys entries first, issue #107); same-name
+    entries in both scopes are both kept, like the other shared-merged exporters.
+    """
     out = []
-    if vsys_root is None:
-        return out
-    container = vsys_root.find("profiles/file-blocking")
-    if container is None:
-        return out
-    for entry in container.findall("entry"):
+    for entry, _ in iter_entries(vsys_root, shared_root, "profiles/file-blocking"):
         name = entry.get("name", "")
         desc = entry.findtext("description") or ""
         rules = []
@@ -2589,15 +2582,15 @@ def _parse_flood_proto(el: Element) -> dict:
     return out
 
 
-def export_dos_protection_profiles(vsys_root) -> list[dict]:
-    """Export DoS protection profiles with full flood and resource settings."""
+def export_dos_protection_profiles(vsys_root, shared_root=None) -> list[dict]:
+    """Export DoS protection profiles with full flood and resource settings.
+
+    Merges vsys and shared scopes (vsys entries first, issue #107); same-name
+    entries in both scopes are both kept, like the other shared-merged exporters.
+    DoS *rules* stay vsys-only — they are rulebase entries, not shared objects.
+    """
     out = []
-    if vsys_root is None:
-        return out
-    container = vsys_root.find("profiles/dos-protection")
-    if container is None:
-        return out
-    for entry in container.findall("entry"):
+    for entry, _ in iter_entries(vsys_root, shared_root, "profiles/dos-protection"):
         name = entry.get("name", "")
         d: dict = {"name": name}
         desc = entry.findtext("description")
