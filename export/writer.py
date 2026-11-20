@@ -351,15 +351,18 @@ def build_export(
         else:
             del vlan["virtual_interface"]
 
-    anti_spyware_profiles           = export_anti_spyware_profiles(vsys_root)
-    wildfire_antivirus_profiles     = export_wildfire_antivirus_profiles(vsys_root)
-    vulnerability_protection_profiles = export_vulnerability_protection_profiles(vsys_root)
-    url_access_profiles             = export_url_access_profiles(vsys_root)
-    decryption_profiles             = export_decryption_profiles(vsys_root)
-    dns_security_profiles           = export_dns_security_profiles(vsys_root)
-    file_blocking_profiles          = export_file_blocking_profiles(vsys_root)
+    # Security-profile content merges vsys + shared scopes (issue #107), the
+    # same iter_entries pattern export_profile_groups and the viewer use.
+    # Zone protection stays network-rooted; DoS rules stay vsys rulebase-only.
+    anti_spyware_profiles           = export_anti_spyware_profiles(vsys_root, shared_root)
+    wildfire_antivirus_profiles     = export_wildfire_antivirus_profiles(vsys_root, shared_root)
+    vulnerability_protection_profiles = export_vulnerability_protection_profiles(vsys_root, shared_root)
+    url_access_profiles             = export_url_access_profiles(vsys_root, shared_root)
+    decryption_profiles             = export_decryption_profiles(vsys_root, shared_root)
+    dns_security_profiles           = export_dns_security_profiles(vsys_root, shared_root)
+    file_blocking_profiles          = export_file_blocking_profiles(vsys_root, shared_root)
     zone_protection_profiles        = export_zone_protection_profiles(network_root)
-    dos_protection_profiles         = export_dos_protection_profiles(vsys_root)
+    dos_protection_profiles         = export_dos_protection_profiles(vsys_root, shared_root)
     dos_protection_rules            = export_dos_protection_rules(vsys_root)
 
     # Surface profile content SCM cannot represent (issue #67) the same way
@@ -499,7 +502,7 @@ def build_export(
             ),
         })
 
-    antivirus_names = list_antivirus_profile_names(vsys_root)
+    antivirus_names = list_antivirus_profile_names(vsys_root, shared_root)
     if antivirus_names:
         warnings.append({
             "severity": "warn",
@@ -521,7 +524,10 @@ def build_export(
                 f"Profile group '{group['name']}' references Antivirus profile "
                 f"'{group['virus']}' and WildFire Analysis profile "
                 f"'{group['wildfire']}'. SCM has one combined slot per group, so "
-                f"only '{group['virus']}' is exported; the WildFire reference is dropped."
+                f"the group keeps only the '{group['virus']}' reference; the "
+                f"'{group['wildfire']}' reference is dropped from the group. "
+                f"A '{group['wildfire']}' profile defined in vsys or shared scope "
+                "is still exported as a standalone WildFire and Antivirus profile."
             ),
         })
 
