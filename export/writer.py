@@ -44,6 +44,7 @@ from export.objects import (
     list_antivirus_profile_names,
     list_wildfire_profile_names,
     find_profile_groups_dropping_wildfire,
+    find_profile_groups_with_data_filtering,
     export_vulnerability_protection_profiles,
     export_url_access_profiles,
     export_decryption_profiles,
@@ -552,6 +553,25 @@ def build_export(
                 f"'{group['wildfire']}' reference is dropped from the group. "
                 f"A '{group['wildfire']}' profile defined in vsys or shared scope "
                 "is still exported as a standalone WildFire and Antivirus profile."
+            ),
+        })
+    # #111: Data Filtering profiles have no SCM equivalent at the pinned
+    # pan-scm-sdk, so they are never exported. The group's data_filtering
+    # reference is kept for documentation only (see export_profile_groups);
+    # warn per referencing group so the dangling reference is never silent.
+    for group in find_profile_groups_with_data_filtering(vsys_root, shared_root):
+        warnings.append({
+            "severity": "warn",
+            "object_path": f"objects/profile_groups/{group['name']}",
+            "message": (
+                f"Profile group '{group['name']}' references Data Filtering "
+                f"profile '{group['data_filtering']}'. Data Filtering profiles "
+                "are not exported: the pinned pan-scm-sdk has no Data "
+                "Filtering profile model (no SCM equivalent), so the "
+                "referenced profile is not migrated. The group's "
+                "'data_filtering' reference is kept in the export for "
+                "documentation only; recreate the data-filtering settings "
+                "manually after migration."
             ),
         })
 

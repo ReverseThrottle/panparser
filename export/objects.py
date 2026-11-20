@@ -165,7 +165,16 @@ def export_profile_groups(vsys_root, shared_root) -> list[dict]:
       wildfire-analysis → virus_and_wildfire_analysis (merged with virus in SCM)
       file-blocking → file_blocking
       dns-security  → dns_security
-      data-filtering → data_filtering
+      data-filtering → data_filtering (kept for documentation only — #111)
+
+    Keep-vs-drop decision (#111): the ``data_filtering`` reference is KEPT
+    in the exported group even though Data Filtering profiles themselves
+    are never exported — the pinned pan-scm-sdk (0.14.0) has no Data
+    Filtering profile model, so there is no SCM target to push them into.
+    Keeping the reference preserves the source config's intent in the
+    migration artifact; ``build_export`` emits one migration warning per
+    referencing group (via ``find_profile_groups_with_data_filtering``)
+    so the dangling reference is never silent.
     """
     _FIELD_MAP = {
         "virus":              "virus_and_wildfire_analysis",
@@ -206,6 +215,27 @@ def find_profile_groups_dropping_wildfire(vsys_root, shared_root) -> list[dict]:
                 "name": entry.get("name", ""),
                 "virus": virus,
                 "wildfire": wildfire,
+            })
+    found.sort(key=lambda x: x["name"].lower())
+    return found
+
+
+def find_profile_groups_with_data_filtering(vsys_root, shared_root) -> list[dict]:
+    """Profile groups that reference a Data Filtering profile (#111).
+
+    Data Filtering profiles have no SCM equivalent at the pinned
+    pan-scm-sdk (0.14.0), so no exporter exists for them.
+    ``export_profile_groups`` keeps the group's ``data_filtering``
+    reference for documentation only, but the referenced profile itself
+    is never exported. Returned so the caller can warn about it.
+    """
+    found = []
+    for entry, _ in iter_entries(vsys_root, shared_root, "profile-group"):
+        val = entry.findtext("data-filtering/member")
+        if val:
+            found.append({
+                "name": entry.get("name", ""),
+                "data_filtering": val,
             })
     found.sort(key=lambda x: x["name"].lower())
     return found

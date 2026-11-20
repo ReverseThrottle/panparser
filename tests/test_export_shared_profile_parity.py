@@ -10,9 +10,12 @@ the UNION of exporter-supported types, not on render_profiles output alone:
   decryption rules). Their parity is asserted against iter_entries — the
   same source render_profiles uses — and the viewer-side exclusion is pinned
   so the guard notices if the viewer ever adds them.
-- data-filtering is viewer-only (no exporter) — a pre-existing separate gap,
-  explicitly out of #107 scope. Its presence in the viewer is pinned so the
-  exclusion stays a documented decision, not an accident.
+- data-filtering is viewer-only (no exporter) — no SCM equivalent at the
+  pinned pan-scm-sdk. #111 closed the silent-dangling-reference half of the
+  gap: profile-group data_filtering references are KEPT in the export for
+  documentation and now emit a per-group migration warning. The profile
+  exporter itself remains out of scope; its viewer presence is pinned so
+  the exclusion stays a documented decision, not an accident.
 """
 from __future__ import annotations
 
@@ -39,7 +42,10 @@ EXPORTER_TYPES = {
 }
 # Exporter types with no shared-scope profile viewer (documented exclusion).
 NO_VIEWER = {"decryption", "dns-security"}
-# Viewer-only type with no exporter (out of #107 scope).
+# Viewer-only type with no exporter: no SCM equivalent at the pinned
+# pan-scm-sdk. #111 chose the migration-warning path — profile-group
+# data_filtering references are kept for documentation and warned about
+# (tests/test_export_data_filtering_warning.py); no profile exporter exists.
 VIEWER_ONLY = {"data-filtering"}
 
 
@@ -87,6 +93,8 @@ def test_shared_profiles_viewer_shows_are_exported():
     # Documented viewer-side exclusions stay excluded (and stay exported).
     for xml_key in NO_VIEWER:
         assert f"Parity-{xml_key}" not in text
-    # Viewer-only type: shown by the viewer, no exporter exists (#107 scope
-    # boundary — the data-filtering export gap is a separate issue).
+    # Viewer-only type: shown by the viewer, no exporter exists (#111 —
+    # no SCM equivalent at the pinned SDK; the migration-warning path was
+    # chosen instead of a 9th exporter).
     assert "Parity-data-filtering" in text
+    assert "data_filtering" not in data["security_profiles"]
