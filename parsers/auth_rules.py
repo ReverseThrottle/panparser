@@ -45,7 +45,7 @@ def render_auth_rules(vsys_root: Element | None, console, grep=None) -> None:
                         src_user, service, auth_enforcement, log_setting):
             continue
 
-        name_str = f"[dim]{name} [disabled][/dim]" if disabled else name
+        name_str = f"[dim italic]{name} (disabled)[/dim italic]" if disabled else name
         table.add_row(str(i), name_str, fmt_any(from_zone), fmt_any(to_zone),
                       fmt_any(src_addr), fmt_any(dst_addr), fmt_any(src_user),
                       fmt_any(service), auth_enforcement, log_setting)

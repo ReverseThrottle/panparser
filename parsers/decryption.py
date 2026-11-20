@@ -42,7 +42,7 @@ def render_decryption_rules(vsys_root: Element | None, console, grep=None) -> No
         if not grep_row(grep, name, from_zone, to_zone, src_addr, dst_addr, decrypt_type, profile, action):
             continue
 
-        name_str = f"[dim]{name} [disabled][/dim]" if disabled else name
+        name_str = f"[dim italic]{name} (disabled)[/dim italic]" if disabled else name
         table.add_row(str(i), name_str, fmt_any(from_zone), fmt_any(to_zone),
                       fmt_any(src_addr), fmt_any(dst_addr), decrypt_type, profile, action)
         added += 1
