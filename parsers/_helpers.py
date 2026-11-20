@@ -35,7 +35,11 @@ def iter_entries(vsys_root: Element | None, shared_root: Element | None,
 
 
 def scope_label(scope: str) -> str:
-    return "[dim][shared][/dim]" if scope == "shared" else ""
+    # Escape the opening bracket so Rich renders literal "[shared]" instead
+    # of consuming it as an (unknown) style tag, which blanked the Scope
+    # cell for shared rows in every section (#115). vsys stays "" — the
+    # implicit default scope is intentionally unlabelled.
+    return "[dim]\\[shared][/dim]" if scope == "shared" else ""
 
 
 def get_members(el: Element, path: str) -> list[str]:
