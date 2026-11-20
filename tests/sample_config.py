@@ -82,6 +82,25 @@ tests/viewer_harness.py expectations.
           <description>shared antivirus</description>
         </entry>
       </virus>
+      <decryption>
+        <entry name="decrypt-shared">
+          <ssl-inbound-proxy>
+            <block-unsupported-version>yes</block-unsupported-version>
+          </ssl-inbound-proxy>
+          <description>shared decryption</description>
+        </entry>
+      </decryption>
+      <dns-security>
+        <entry name="dns-shared">
+          <botnet-domains>
+            <lists>
+              <entry name="shared-blocklist">
+                <action><block/></action>
+              </entry>
+            </lists>
+          </botnet-domains>
+        </entry>
+      </dns-security>
     </profiles>
     <certificate>
       <entry name="vpn-cert">
@@ -313,6 +332,50 @@ tests/viewer_harness.py expectations.
                 <resource><sessions/></resource>
               </entry>
             </dos-protection>
+            <decryption>
+              <entry name="decrypt-profile">
+                <ssl-forward-proxy>
+                  <block-expired-certificate>yes</block-expired-certificate>
+                  <block-untrusted-issuer>yes</block-untrusted-issuer>
+                </ssl-forward-proxy>
+                <ssl-no-proxy>
+                  <block-expired-certificate>yes</block-expired-certificate>
+                </ssl-no-proxy>
+                <ssl-protocol-settings>
+                  <min-version>tls1-0</min-version>
+                  <max-version>tls1-2</max-version>
+                </ssl-protocol-settings>
+                <description>vsys decryption profile</description>
+              </entry>
+            </decryption>
+            <dns-security>
+              <entry name="dns-default">
+                <botnet-domains>
+                  <dns-security-categories>
+                    <entry name="pan-dns-sec-malware">
+                      <action>sinkhole</action>
+                      <log-level>high</log-level>
+                    </entry>
+                    <entry name="pan-dns-sec-benign">
+                      <action>allow</action>
+                    </entry>
+                  </dns-security-categories>
+                  <lists>
+                    <entry name="bad-domains">
+                      <action><block/></action>
+                      <packet-capture>single-packet</packet-capture>
+                    </entry>
+                  </lists>
+                  <sinkhole>
+                    <ipv4-address>127.0.0.1</ipv4-address>
+                    <ipv6-address>::1</ipv6-address>
+                  </sinkhole>
+                  <whitelist>
+                    <entry name="good.example.com"/>
+                  </whitelist>
+                </botnet-domains>
+              </entry>
+            </dns-security>
             <custom-url-category>
               <entry name="url-custom">
                 <type>URL List</type>

@@ -270,10 +270,57 @@ def test_profiles_summaries_and_merge(roots):
     assert by_key[("DoS Protection", "dos-profile")][3] == "flood-protection, resource-protection"
     assert by_key[("Data Filtering", "df-default")][3] == ""
     assert by_key[("Antivirus", "av-shared")][1] == "shared"
+    # #112: decryption + dns-security from BOTH scopes, with summaries.
+    dec = by_key[("Decryption", "decrypt-profile")]
+    assert dec[1] == "vsys"
+    assert dec[3] == "ssl-forward-proxy, ssl-no-proxy, ssl-protocol-settings"
+    assert dec[4] == "vsys decryption profile"
+    dec_shared = by_key[("Decryption", "decrypt-shared")]
+    assert dec_shared[1] == "shared"
+    assert dec_shared[3] == "ssl-inbound-proxy"
+    assert dec_shared[4] == "shared decryption"
+    dns = by_key[("DNS Security", "dns-default")]
+    assert dns[1] == "vsys"
+    assert dns[3] == "2 category(s), 1 list(s), sinkhole, 1 whitelist"
+    dns_shared = by_key[("DNS Security", "dns-shared")]
+    assert dns_shared[1] == "shared"
+    assert dns_shared[3] == "1 list(s)"
     assert {r[0] for r in rows} == {
         "Antivirus", "Anti-Spyware", "Vulnerability Protection", "URL Filtering",
         "File Blocking", "WildFire Analysis", "Data Filtering", "DoS Protection",
+        "Decryption", "DNS Security",
     }
+
+
+def test_profiles_new_type_summaries_never_empty_when_populated():
+    """#112 AC2: a populated decryption/dns-security profile must not render
+    an empty summary — including content outside the headline blocks
+    (protocol-settings-only decryption, legacy-only botnet-domains)."""
+    xml = """<profiles>
+      <decryption>
+        <entry name="d-proto-only">
+          <ssl-protocol-settings><min-version>tls1-2</min-version></ssl-protocol-settings>
+        </entry>
+        <entry name="d-ssh-only"><ssh-proxy><block-unsupported-version>yes</block-unsupported-version></ssh-proxy></entry>
+        <entry name="d-empty"/>
+      </decryption>
+      <dns-security>
+        <entry name="n-legacy">
+          <botnet-domains>
+            <threat-exception><entry name="10001"/></threat-exception>
+          </botnet-domains>
+        </entry>
+        <entry name="n-empty"/>
+      </dns-security>
+    </profiles>"""
+    rows = _data.get_profiles(ET.fromstring(f"<vsys>{xml}</vsys>"), None)
+    by_name = {r[2]: r for r in rows}
+    assert by_name["d-proto-only"][3] == "ssl-protocol-settings"
+    assert by_name["d-ssh-only"][3] == "ssh-proxy"
+    assert by_name["n-legacy"][3] == "botnet-domains"
+    # Genuinely empty entries keep the empty summary (like df-default).
+    assert by_name["d-empty"][3] == ""
+    assert by_name["n-empty"][3] == ""
 
 
 def test_address_groups_static_and_dynamic(roots):
