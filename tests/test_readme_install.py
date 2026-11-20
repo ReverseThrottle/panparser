@@ -83,6 +83,26 @@ def test_documented_python_floor_covered_by_ci_matrix():
     )
 
 
+def test_readme_ci_python_versions_match_matrix():
+    """#100: the README's enumerated CI legs must equal the workflow matrix.
+
+    The floor test above only pins the lower bound; an open-ended '3.10+'
+    claim drifts silently when new interpreters ship (or when one side is
+    edited alone). Both directions are guarded here.
+    """
+    ci = TESTS_YML.read_text(encoding="utf-8")
+    matrix = re.search(r"python-version:\s*\[([^\]]*)\]", ci)
+    assert matrix, "tests.yml must run a python-version matrix"
+    ci_versions = set(re.findall(r"[\"'](\d+\.\d+)[\"']", matrix.group(1)))
+    sentence = re.search(r"CI runs the suite on Python (.*?), guarding", README, re.DOTALL)
+    assert sentence, "README must enumerate the CI matrix in Development / Running the tests"
+    doc_versions = set(re.findall(r"\d+\.\d+", sentence.group(1)))
+    assert doc_versions == ci_versions, (
+        f"README lists CI legs {sorted(doc_versions)} but tests.yml runs "
+        f"{sorted(ci_versions)} — keep the claim and the guard in sync"
+    )
+
+
 def _module_source(module: str) -> Path | None:
     """Repo-local source file for a dotted module name, if it exists."""
     rel = module.replace(".", "/")
