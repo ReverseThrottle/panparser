@@ -42,6 +42,7 @@ from export.objects import (
     export_anti_spyware_profiles,
     export_wildfire_antivirus_profiles,
     list_antivirus_profile_names,
+    list_wildfire_profile_names,
     find_profile_groups_dropping_wildfire,
     export_vulnerability_protection_profiles,
     export_url_access_profiles,
@@ -504,17 +505,40 @@ def build_export(
 
     antivirus_names = list_antivirus_profile_names(vsys_root, shared_root)
     if antivirus_names:
+        # Reconcile the warning's name sets with the exporter's #65 collision
+        # policy: a same-named WildFire Analysis definition wins, so the virus
+        # entry is skipped and NO default-rule export happens for that name
+        # (#108). Only non-colliding names may be claimed as default-rule
+        # exports; colliding names get an accurate note instead — their
+        # per-decoder antivirus actions are still dropped (the tail below).
+        # Both name sets merge vsys + shared scopes (#107) so the
+        # reconciliation stays accurate for shared collisions.
+        wildfire_names = set(list_wildfire_profile_names(vsys_root, shared_root))
+        default_rule_names = [n for n in antivirus_names if n not in wildfire_names]
+        collision_names = [n for n in antivirus_names if n in wildfire_names]
+        message = ""
+        if default_rule_names:
+            message += (
+                f"{len(default_rule_names)} Antivirus profile(s) exported as SCM "
+                "WildFire and Antivirus profile(s) with a default WildFire rule: "
+                + ", ".join(default_rule_names) + ". "
+            )
+        if collision_names:
+            message += (
+                f"{len(collision_names)} Antivirus profile(s) share a name with a "
+                "WildFire Analysis profile; the WildFire definition was exported "
+                "instead (the Antivirus entry was skipped): "
+                + ", ".join(collision_names) + ". "
+            )
+        message += (
+            "SCM has no equivalent of the PAN-OS per-decoder antivirus "
+            "actions (e.g. reset-both), so those settings are not migrated. "
+            "Review each profile in SCM."
+        )
         warnings.append({
             "severity": "warn",
             "object_path": "security_profiles/wildfire_antivirus",
-            "message": (
-                f"{len(antivirus_names)} Antivirus profile(s) exported as SCM "
-                "WildFire and Antivirus profile(s) with a default WildFire rule: "
-                + ", ".join(antivirus_names)
-                + ". SCM has no equivalent of the PAN-OS per-decoder antivirus "
-                "actions (e.g. reset-both), so those settings are not migrated. "
-                "Review each profile in SCM."
-            ),
+            "message": message,
         })
     for group in find_profile_groups_dropping_wildfire(vsys_root, shared_root):
         warnings.append({

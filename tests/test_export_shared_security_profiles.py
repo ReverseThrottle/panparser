@@ -28,6 +28,7 @@ from export.objects import (
     export_vulnerability_protection_profiles,
     export_wildfire_antivirus_profiles,
     list_antivirus_profile_names,
+    list_wildfire_profile_names,
 )
 from export.writer import build_export
 from export_fixtures import (
@@ -194,6 +195,98 @@ class TestListAntivirusProfileNamesShared:
         shared = shared_root('<profiles><virus><entry name="S"/></virus></profiles>')
         assert list_antivirus_profile_names(None, shared) == ["S"]
         assert list_antivirus_profile_names(None, None) == []
+
+
+class TestListWildfireProfileNamesShared:
+    """#108's companion helper extended identically for #107's merge."""
+
+    def test_merges_and_sorts_both_scopes(self):
+        vsys = vsys_root(
+            '<profiles><wildfire-analysis><entry name="Z-wf"/></wildfire-analysis></profiles>')
+        shared = shared_root(
+            '<profiles><wildfire-analysis><entry name="a-wf"/></wildfire-analysis></profiles>')
+        assert list_wildfire_profile_names(vsys, shared) == ["a-wf", "Z-wf"]
+
+    def test_shared_only_and_none_roots(self):
+        shared = shared_root(
+            '<profiles><wildfire-analysis><entry name="S"/></wildfire-analysis></profiles>')
+        assert list_wildfire_profile_names(None, shared) == ["S"]
+        assert list_wildfire_profile_names(None, None) == []
+
+    def test_same_name_in_both_scopes_no_dedupe(self):
+        xml = '<profiles><wildfire-analysis><entry name="Dup"/></wildfire-analysis></profiles>'
+        assert list_wildfire_profile_names(vsys_root(xml), shared_root(xml)) == ["Dup", "Dup"]
+
+
+def _av_warning(data: dict) -> str:
+    found = [
+        w["message"] for w in data["migration_warnings"]
+        if w["object_path"] == "security_profiles/wildfire_antivirus"
+    ]
+    assert len(found) == 1
+    return found[0]
+
+
+class TestSharedCollisionWarningReconciliation:
+    """#107 x #108: the warning's name-set reconciliation must account for
+    shared entries in BOTH name sets — a shared WildFire definition suppresses
+    the default-rule claim for a same-named virus entry in either scope."""
+
+    WF_SHARED = (
+        '<profiles><wildfire-analysis><entry name="X"><rules>'
+        '<entry name="r1"><direction>upload</direction><analysis>private-cloud</analysis></entry>'
+        '</rules></entry></wildfire-analysis></profiles>'
+    )
+    VIRUS_X = '<profiles><virus><entry name="X"/></virus></profiles>'
+
+    def test_vsys_virus_collides_with_shared_wildfire_warning(self):
+        data = _build(vsys_xml=self.VIRUS_X, shared_xml=self.WF_SHARED)
+        msg = _av_warning(data)
+        assert "with a default WildFire rule" not in msg
+        assert "1 Antivirus profile(s) share a name with a WildFire Analysis profile" in msg
+        assert "the WildFire definition was exported instead" in msg
+        assert "X" in msg
+        assert [p["name"] for p in data["security_profiles"]["wildfire_antivirus"]] == ["X"]
+
+    def test_shared_virus_collides_with_vsys_wildfire_warning(self):
+        wf_vsys = self.WF_SHARED  # same XML, planted in vsys instead
+        data = _build(vsys_xml=wf_vsys, shared_xml=self.VIRUS_X)
+        msg = _av_warning(data)
+        assert "with a default WildFire rule" not in msg
+        assert "the WildFire definition was exported instead" in msg
+        assert "X" in msg
+
+    def test_shared_virus_collides_with_shared_wildfire_warning(self):
+        data = _build(shared_xml=(
+            '<profiles><virus><entry name="X"/></virus>'
+            '<wildfire-analysis><entry name="X"><rules>'
+            '<entry name="r1"><direction>upload</direction><analysis>private-cloud</analysis></entry>'
+            '</rules></entry></wildfire-analysis></profiles>'
+        ))
+        msg = _av_warning(data)
+        assert "with a default WildFire rule" not in msg
+        assert "the WildFire definition was exported instead" in msg
+
+    def test_mixed_scopes_partition_counts_and_names(self):
+        # Non-colliding virus in each scope -> default-rule claims; colliding
+        # virus (vsys) vs shared wildfire -> collision note.
+        data = _build(
+            vsys_xml=(
+                '<profiles><virus><entry name="X"/><entry name="V-av"/></virus></profiles>'
+            ),
+            shared_xml=(
+                '<profiles><virus><entry name="S-av"/></virus>'
+                '<wildfire-analysis><entry name="X"/></wildfire-analysis></profiles>'
+            ),
+        )
+        msg = _av_warning(data)
+        assert "2 Antivirus profile(s) exported" in msg
+        assert "with a default WildFire rule: S-av, V-av." in msg
+        assert "1 Antivirus profile(s) share a name with a WildFire Analysis profile" in msg
+        assert "X" in msg
+        assert sorted(
+            p["name"] for p in data["security_profiles"]["wildfire_antivirus"]
+        ) == ["S-av", "V-av", "X"]
 
 
 # The issue's probe config: shared group referencing shared profiles, vsys

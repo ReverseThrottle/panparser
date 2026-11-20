@@ -1811,6 +1811,27 @@ def list_antivirus_profile_names(vsys_root, shared_root=None) -> list[str]:
     )
 
 
+def list_wildfire_profile_names(vsys_root, shared_root=None) -> list[str]:
+    """Names of PAN-OS WildFire Analysis profiles (``profiles/wildfire-analysis``), sorted.
+
+    Companion to ``list_antivirus_profile_names`` for reconciling the #65
+    collision policy in the migration warning: a virus entry whose name is
+    also listed here is skipped by ``export_wildfire_antivirus_profiles``
+    (the WildFire definition wins), so it is NOT exported with a default
+    WildFire rule (#108).
+
+    Merges vsys and shared scopes (vsys entries first, issue #107), same as
+    ``list_antivirus_profile_names``, so the set-difference reconciliation
+    stays accurate for shared collisions. Same-name entries in both scopes
+    are both listed (no dedupe).
+    """
+    return sorted(
+        (e.get("name", "")
+         for e, _ in iter_entries(vsys_root, shared_root, "profiles/wildfire-analysis")),
+        key=str.lower,
+    )
+
+
 def export_wildfire_antivirus_profiles(vsys_root, shared_root=None) -> list[dict]:
     """Export WildFire and Antivirus profiles for SCM's combined profile type.
 

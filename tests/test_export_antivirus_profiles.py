@@ -8,6 +8,7 @@ from export.objects import (
     export_wildfire_antivirus_profiles,
     find_profile_groups_dropping_wildfire,
     list_antivirus_profile_names,
+    list_wildfire_profile_names,
 )
 
 DEFAULT_RULE = {
@@ -83,6 +84,19 @@ class TestListAntivirusProfileNames:
     def test_empty_and_none(self):
         assert list_antivirus_profile_names(_vsys("")) == []
         assert list_antivirus_profile_names(None) == []
+
+
+class TestListWildfireProfileNames:
+    def test_lists_wildfire_names_only(self):
+        assert list_wildfire_profile_names(_vsys(AV + WF)) == ["wf-custom"]
+
+    def test_sorted_case_insensitive(self):
+        xml = _vsys("<wildfire-analysis><entry name='Z-wf'/><entry name='a-wf'/></wildfire-analysis>")
+        assert list_wildfire_profile_names(xml) == ["a-wf", "Z-wf"]
+
+    def test_empty_and_none(self):
+        assert list_wildfire_profile_names(_vsys("")) == []
+        assert list_wildfire_profile_names(None) == []
 
 
 GROUP_BOTH = """
