@@ -139,7 +139,8 @@ RENDERERS = [
      ["pbf-forward", "pbf-discard", "pbf-noaction"],
      "No vsys configuration found."),
     (profiles, profiles.render_profiles, "vs",
-     ["av-default", "av-shared", "as-default", "vp-default", "wf-default"],
+     ["av-default", "av-shared", "as-default", "vp-default", "wf-default",
+      "decrypt-profile", "decrypt-shared", "dns-default", "dns-shared"],
      "No security profiles found."),
     (qos_profiles, qos_profiles.render_qos_interface_profiles, "n",
      ["qos-egress", "class1"],
@@ -238,6 +239,37 @@ def test_grep_matching_nothing_renders_empty_state():
     text = render_text(addresses.render_addresses, *sample_roots_for("vs"), grep="zzz-no-match")
     assert "No address objects found." in text
     assert "host-web" not in text
+
+
+def test_profiles_renderer_decryption_and_dns_security_both_scopes():
+    """#112: the CLI profiles section shows decryption + dns-security from
+    vsys AND shared, with non-empty summaries in the existing style. Scope
+    labels go through the same scope_label helper as every other type; the
+    raw scope values are asserted at getter/TUI level (test_data_getters /
+    test_tui_smoke)."""
+    vsys, shared, _ = sample_roots_for("vsn")
+    text = render_text(profiles.render_profiles, vsys, shared)
+    assert "Decryption Profiles" in text
+    assert "DNS Security Profiles" in text
+    # vsys entries with their summaries and descriptions.
+    assert "decrypt-profile" in text
+    assert "ssl-forward-proxy, ssl-no-proxy, ssl-protocol-settings" in text
+    assert "vsys decryption profile" in text
+    assert "dns-default" in text
+    assert "2 category(s), 1 list(s), sinkhole, 1 whitelist" in text
+    # Shared entries render through the same merged path (scope_label applied).
+    assert "decrypt-shared" in text
+    assert "ssl-inbound-proxy" in text
+    assert "shared decryption" in text
+    assert "dns-shared" in text
+    assert "1 list(s)" in text
+    # Each root alone still renders its own scope's entries of both types.
+    vsys_only = render_text(profiles.render_profiles, vsys, None)
+    assert "decrypt-profile" in vsys_only and "dns-default" in vsys_only
+    assert "decrypt-shared" not in vsys_only and "dns-shared" not in vsys_only
+    shared_only = render_text(profiles.render_profiles, None, shared)
+    assert "decrypt-shared" in shared_only and "dns-shared" in shared_only
+    assert "decrypt-profile" not in shared_only and "dns-default" not in shared_only
 
 
 def test_zones_renderer_reads_vsys_root_not_network():
