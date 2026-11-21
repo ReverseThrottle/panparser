@@ -186,6 +186,10 @@ def test_dos_rules_protection_and_action(roots):
     assert rows["dos-protect"][7:9] == ("aggregate", "protect")
     assert rows["dos-classified"][7:9] == ("classified", "deny")
     assert rows["dos-bare"][7:9] == ("", "")
+    # #118: disabled flag appended to the row schema (export/viewer parity)
+    assert rows["dos-protect"][-1] is False
+    assert rows["dos-classified"][-1] is True
+    assert rows["dos-bare"][-1] is False
 
 
 def test_interfaces_types_subinterfaces_and_bare_parents(roots):
@@ -432,10 +436,12 @@ def test_decryption_pbf_app_override_auth_qos_rules(roots):
     )
     assert _data.get_pbf_rules(vsys)[0] == (
         1, "pbf-forward", "trust", "host-web", "any", "app-custom", "svc-https",
-        "forward", "ethernet1/2", "10.1.1.254",
+        "forward", "ethernet1/2", "10.1.1.254", False,
     )
     assert _data.get_pbf_rules(vsys)[1][7:10] == ("discard", "", "")
+    assert _data.get_pbf_rules(vsys)[1][-1] is True  # pbf-discard disabled (#118)
     assert _data.get_pbf_rules(vsys)[2][7:10] == ("", "", "")
+    assert _data.get_pbf_rules(vsys)[2][-1] is False  # pbf-noaction enabled
     assert _data.get_app_override_rules(vsys)[0] == (
         1, "app-ov-1", "trust", "untrust", "any", "host-web",
         "tcp", "8080", "app-custom", False,

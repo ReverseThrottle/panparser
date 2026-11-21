@@ -301,7 +301,7 @@ def _get_profile_group(rule) -> str:
 
 
 def get_dos_rules(vsys_root) -> list[tuple]:
-    """(num, name, from_zone, to_zone, src_addr, dst_addr, service, protection_type, action, log_setting, description)"""
+    """(num, name, from_zone, to_zone, src_addr, dst_addr, service, protection_type, action, log_setting, description, disabled)"""
     rows = []
     if vsys_root is None:
         return rows
@@ -310,6 +310,7 @@ def get_dos_rules(vsys_root) -> list[tuple]:
         return rows
     for i, rule in enumerate(container.findall("entry"), 1):
         name = rule.get("name", "")
+        disabled = rule.findtext("disabled") == "yes"
         from_zone = ", ".join(get_members(rule, "from/zone/member"))
         to_zone = ", ".join(get_members(rule, "to/zone/member"))
         src_addr = ", ".join(get_members(rule, "source/member"))
@@ -328,7 +329,7 @@ def get_dos_rules(vsys_root) -> list[tuple]:
         log_setting = rule.findtext("log-setting") or ""
         description = rule.findtext("description") or ""
         rows.append((i, name, from_zone, to_zone, src_addr, dst_addr, service,
-                     protection_type, action, log_setting, description))
+                     protection_type, action, log_setting, description, disabled))
     return rows
 
 
@@ -456,7 +457,7 @@ def get_decryption_rules(vsys_root) -> list[tuple]:
 
 
 def get_pbf_rules(vsys_root) -> list[tuple]:
-    """(num, name, from_zone, src_addr, dst_addr, app, service, action, egress_iface, nexthop)"""
+    """(num, name, from_zone, src_addr, dst_addr, app, service, action, egress_iface, nexthop, disabled)"""
     rows = []
     if vsys_root is None:
         return rows
@@ -465,6 +466,7 @@ def get_pbf_rules(vsys_root) -> list[tuple]:
         return rows
     for i, rule in enumerate(container.findall("entry"), 1):
         name = rule.get("name", "")
+        disabled = rule.findtext("disabled") == "yes"
         from_zone = ", ".join(get_members(rule, "from/zone/member"))
         src_addr = ", ".join(get_members(rule, "source/member"))
         dst_addr = ", ".join(get_members(rule, "destination/member"))
@@ -482,7 +484,7 @@ def get_pbf_rules(vsys_root) -> list[tuple]:
             egress_iface = ""
             nexthop = ""
         rows.append((i, name, from_zone, src_addr, dst_addr, app, service, action,
-                     egress_iface or "", nexthop or ""))
+                     egress_iface or "", nexthop or "", disabled))
     return rows
 
 
