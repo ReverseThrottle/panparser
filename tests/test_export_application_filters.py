@@ -1,8 +1,12 @@
-"""Field-asserting tests for export_application_filters() — issue #92 backfill."""
+"""Field-asserting tests for export_application_filters() — issue #92 backfill.
+
+Shared-scope merge coverage added for #121: vsys + shared via iter_entries,
+the #107 convention (same-name entries in both scopes are BOTH kept).
+"""
 from __future__ import annotations
 
 from export.objects import export_application_filters
-from export_fixtures import vsys_root
+from export_fixtures import shared_root, vsys_root
 
 
 class TestExportApplicationFilters:
@@ -62,3 +66,34 @@ class TestExportApplicationFilters:
     def test_sorted_case_insensitive(self):
         root = vsys_root('<application-filter><entry name="Z-filter"/><entry name="a-filter"/></application-filter>')
         assert [f["name"] for f in export_application_filters(root)] == ["a-filter", "Z-filter"]
+
+    def test_both_roots_none(self):
+        assert export_application_filters(None, None) == []
+
+    def test_shared_only(self):
+        shared = shared_root(
+            '<application-filter><entry name="s-filter">'
+            '<category><member>networking</member></category>'
+            '</entry></application-filter>')
+        assert export_application_filters(None, shared) == [
+            {"name": "s-filter", "category": ["networking"]},
+        ]
+
+    def test_vsys_and_shared_merged_sorted(self):
+        vsys = vsys_root('<application-filter><entry name="Z-filter"/></application-filter>')
+        shared = shared_root('<application-filter><entry name="a-filter"/></application-filter>')
+        assert [f["name"] for f in export_application_filters(vsys, shared)] == ["a-filter", "Z-filter"]
+
+    def test_same_name_both_scopes_kept_twice(self):
+        """#107 convention: no dedupe — one entry per scope, vsys first."""
+        vsys = vsys_root(
+            '<application-filter><entry name="dup">'
+            '<category><member>networking</member></category>'
+            '</entry></application-filter>')
+        shared = shared_root(
+            '<application-filter><entry name="dup">'
+            '<category><member>business-systems</member></category>'
+            '</entry></application-filter>')
+        out = export_application_filters(vsys, shared)
+        assert [f["name"] for f in out] == ["dup", "dup"]
+        assert [f["category"] for f in out] == [["networking"], ["business-systems"]]
