@@ -244,6 +244,23 @@ def test_grep_matching_nothing_renders_empty_state():
     assert "host-web" not in text
 
 
+# (#118) PBF/DoS were the last exported rule families whose disabled state
+# was invisible in the CLI. Same literal (disabled) name marker as security/nat.
+@pytest.mark.parametrize("fn,disabled_rule,enabled_rules", [
+    (dos.render_dos_rules, "dos-classified", ("dos-protect", "dos-bare")),
+    (pbf.render_pbf_rules, "pbf-discard", ("pbf-forward", "pbf-noaction")),
+], ids=["dos", "pbf"])
+def test_disabled_rule_renders_marker(fn, disabled_rule, enabled_rules):
+    """#118 regression: the disabled row renders the literal "(disabled)"
+    name marker; enabled rows stay unmarked. Asserted on rendered text
+    (render_text), not the markup source string — a markup-string assertion
+    would keep passing with the bug (same discipline as #115)."""
+    text = render_text(fn, *sample_roots_for("v"))
+    assert f"{disabled_rule} (disabled)" in text, text
+    for name in enabled_rules:
+        assert f"{name} (disabled)" not in text, text
+
+
 def test_profiles_renderer_decryption_and_dns_security_both_scopes():
     """#112: the CLI profiles section shows decryption + dns-security from
     vsys AND shared, with non-empty summaries in the existing style. Scope

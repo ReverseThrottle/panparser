@@ -60,7 +60,7 @@ ACTION_STYLES = {
 # Contract (#90): ``detail_keys`` positionally labels the RAW getter row — the
 # getter's docstring in parsers/_data.py is the schema — NOT the display
 # projection produced by ``row_fn``. The detail bar is a full-record view: it
-# can include fields the table hides (security/nat "Disabled", dos
+# can include fields the table hides (security/nat/pbf/dos "Disabled", dos
 # "Description") and its order follows the getter, not the columns (cf.
 # profiles: Profile Type, Scope, Name). Invariant: len(detail_keys) equals the
 # getter's row width — pinned by test_detail_keys_label_raw_rows_positionally.
@@ -134,7 +134,7 @@ SECTIONS: list[dict[str, Any]] = [
         "getter": "get_dos_rules",
         "roots": "vsys",
         "row_fn": lambda i, r: (str(i + 1), r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9]),
-        "detail_keys": ["#", "Name", "From Zone", "To Zone", "Src Addr", "Dst Addr", "Service", "Protection Type", "Action", "Log Setting", "Description"],
+        "detail_keys": ["#", "Name", "From Zone", "To Zone", "Src Addr", "Dst Addr", "Service", "Protection Type", "Action", "Log Setting", "Description", "Disabled"],
     },
     {
         "id": "zones",
@@ -289,7 +289,7 @@ SECTIONS: list[dict[str, Any]] = [
         "getter": "get_pbf_rules",
         "roots": "vsys",
         "row_fn": lambda i, r: (str(r[0]), r[1], r[2], r[3], r[4], r[5], r[6], r[7], r[8], r[9]),
-        "detail_keys": ["#", "Name", "From Zone", "Src Addr", "Dst Addr", "App", "Service", "Action", "Egress Iface", "Nexthop"],
+        "detail_keys": ["#", "Name", "From Zone", "Src Addr", "Dst Addr", "App", "Service", "Action", "Egress Iface", "Nexthop", "Disabled"],
     },
     {
         "id": "app-override",

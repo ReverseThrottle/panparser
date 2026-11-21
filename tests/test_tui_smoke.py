@@ -296,12 +296,15 @@ def test_detail_keys_label_raw_rows_positionally():
         ("security", "Disabled", 2),
         ("nat", "Disabled", 2),
         ("dos", "Description", 10),
+        ("dos", "Disabled", 11),
+        ("pbf", "Disabled", 10),
     ],
 )
 def test_detail_bar_keeps_hidden_fields_for_rule_sections(section_id, hidden_key, hidden_idx):
     """#90 AC3: rule sections whose detail_keys include fields the table
-    hides (security/nat Disabled, dos Description) must keep labeling the
-    full raw record — the fix must not regress them to a display-only zip."""
+    hides (security/nat/pbf/dos Disabled, dos Description) must keep labeling
+    the full raw record — the fix must not regress them to a display-only
+    zip. The pbf/dos Disabled cases pin #118's appended schema field."""
     async def body(app, pilot):
         await pilot.pause()
         tc = app.query_one(TabbedContent)
@@ -314,6 +317,36 @@ def test_detail_bar_keeps_hidden_fields_for_rule_sections(section_id, hidden_key
         detail = str(app.query_one("#detail-bar", Static).render())
         assert f"Name: {raw[1]}" in detail
         assert f"{hidden_key}: {raw[hidden_idx]}" in detail
+
+    run_app_test(_app_factory, body)
+
+
+@pytest.mark.parametrize("section_id,row_idx,name,disabled_idx,disabled", [
+    ("dos", 0, "dos-protect", 11, False),
+    ("dos", 1, "dos-classified", 11, True),
+    ("pbf", 0, "pbf-forward", 10, False),
+    ("pbf", 1, "pbf-discard", 10, True),
+])
+def test_detail_bar_disabled_state_matches_rule(section_id, row_idx, name, disabled_idx, disabled):
+    """#118: the appended Disabled field must reach the detail bar with each
+    rule's actual state — enabled AND disabled rows, both sections. The
+    table auto-highlights row 0 on tab activation, so one down reaches row 1."""
+    async def body(app, pilot):
+        await pilot.pause()
+        tc = app.query_one(TabbedContent)
+        tc.active = f"tab-{section_id}"
+        await pilot.pause()
+        await pilot.press("escape")
+        await pilot.press("down")  # row 0 -> row 1
+        if row_idx == 0:
+            await pilot.press("up")  # back to row 0
+        await pilot.pause()
+        raw = app._section_data[section_id][row_idx]
+        assert raw[1] == name
+        assert raw[disabled_idx] is disabled
+        detail = str(app.query_one("#detail-bar", Static).render())
+        assert f"Name: {name}" in detail
+        assert f"Disabled: {disabled}" in detail
 
     run_app_test(_app_factory, body)
 

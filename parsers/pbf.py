@@ -31,6 +31,7 @@ def render_pbf_rules(vsys_root: Element | None, console, grep=None) -> None:
     added = 0
     for i, rule in enumerate(container.findall("entry"), 1):
         name = rule.get("name", "")
+        disabled = rule.findtext("disabled") == "yes"
         from_zone = fmt_members(get_members(rule, "from/zone/member"))
         src_addr = fmt_members(get_members(rule, "source/member"))
         dst_addr = fmt_members(get_members(rule, "destination/member"))
@@ -52,7 +53,8 @@ def render_pbf_rules(vsys_root: Element | None, console, grep=None) -> None:
                         action, egress_iface or "", nexthop or ""):
             continue
 
-        table.add_row(str(i), name, fmt_any(from_zone), fmt_any(src_addr), fmt_any(dst_addr),
+        name_markup = f"[dim italic]{name} (disabled)[/dim italic]" if disabled else name
+        table.add_row(str(i), name_markup, fmt_any(from_zone), fmt_any(src_addr), fmt_any(dst_addr),
                       fmt_any(app), fmt_any(service), action, egress_iface or "", nexthop or "")
         added += 1
 

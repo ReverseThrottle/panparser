@@ -31,6 +31,7 @@ def render_dos_rules(vsys_root: Element | None, console, grep: str | None = None
     added = 0
     for i, rule in enumerate(container.findall("entry"), 1):
         name = rule.get("name", "")
+        disabled = rule.findtext("disabled") == "yes"
         from_zone = fmt_members(get_members(rule, "from/zone/member"))
         to_zone = fmt_members(get_members(rule, "to/zone/member"))
         src_addr = fmt_members(get_members(rule, "source/member"))
@@ -49,7 +50,8 @@ def render_dos_rules(vsys_root: Element | None, console, grep: str | None = None
                         protection_type, action, log_setting):
             continue
 
-        table.add_row(str(i), name, fmt_any(from_zone), fmt_any(to_zone),
+        name_markup = f"[dim italic]{name} (disabled)[/dim italic]" if disabled else name
+        table.add_row(str(i), name_markup, fmt_any(from_zone), fmt_any(to_zone),
                       fmt_any(src_addr), fmt_any(dst_addr), fmt_any(service),
                       protection_type, action, log_setting)
         added += 1

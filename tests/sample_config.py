@@ -536,6 +536,7 @@ tests/viewer_harness.py expectations.
                   <description>aggregate protection</description>
                 </entry>
                 <entry name="dos-classified">
+                  <disabled>yes</disabled>
                   <from><zone><member>untrust</member></zone></from>
                   <to><zone><member>trust</member></zone></to>
                   <source><member>any</member></source>
@@ -591,6 +592,7 @@ tests/viewer_harness.py expectations.
                   </action>
                 </entry>
                 <entry name="pbf-discard">
+                  <disabled>yes</disabled>
                   <from><zone><member>trust</member></zone></from>
                   <source><member>any</member></source>
                   <destination><member>any</member></destination>
