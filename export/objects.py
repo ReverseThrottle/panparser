@@ -2750,15 +2750,15 @@ def export_dos_protection_rules(vsys_root) -> list[dict]:
 
 # ── Chunk 3: Applications, Schedules, EDLs, Server Profiles, Auth Profiles ───
 
-def export_custom_applications(vsys_root) -> list[dict]:
-    """Export custom application definitions from vsys/application."""
+def export_custom_applications(vsys_root, shared_root=None) -> list[dict]:
+    """Export custom application definitions from vsys + shared scopes.
+
+    Merges via iter_entries (vsys first, then shared), matching the viewer
+    (get_applications) and the #107 shared-merge convention: an entry present
+    in both scopes appears twice, one per scope — no dedupe.
+    """
     out = []
-    if vsys_root is None:
-        return out
-    container = vsys_root.find("application")
-    if container is None:
-        return out
-    for entry in container.findall("entry"):
+    for entry, _ in iter_entries(vsys_root, shared_root, "application"):
         name = entry.get("name", "")
         risk_raw = entry.findtext("risk")
         try:
@@ -2780,15 +2780,15 @@ def export_custom_applications(vsys_root) -> list[dict]:
     return out
 
 
-def export_application_filters(vsys_root) -> list[dict]:
-    """Export application filter definitions from vsys/application-filter."""
+def export_application_filters(vsys_root, shared_root=None) -> list[dict]:
+    """Export application filter definitions from vsys + shared scopes.
+
+    Merges via iter_entries (vsys first, then shared), matching the viewer
+    (get_application_filters) and the #107 shared-merge convention: an entry
+    present in both scopes appears twice, one per scope — no dedupe.
+    """
     out = []
-    if vsys_root is None:
-        return out
-    container = vsys_root.find("application-filter")
-    if container is None:
-        return out
-    for entry in container.findall("entry"):
+    for entry, _ in iter_entries(vsys_root, shared_root, "application-filter"):
         name = entry.get("name", "")
         d: dict = {"name": name}
         categories = get_members(entry, "category/member")

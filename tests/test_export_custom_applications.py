@@ -1,8 +1,12 @@
-"""Field-asserting tests for export_custom_applications() — issue #92 backfill."""
+"""Field-asserting tests for export_custom_applications() — issue #92 backfill.
+
+Shared-scope merge coverage added for #121: vsys + shared via iter_entries,
+the #107 convention (same-name entries in both scopes are BOTH kept).
+"""
 from __future__ import annotations
 
 from export.objects import export_custom_applications
-from export_fixtures import vsys_root
+from export_fixtures import shared_root, vsys_root
 
 
 class TestExportCustomApplications:
@@ -49,3 +53,29 @@ class TestExportCustomApplications:
     def test_sorted_case_insensitive(self):
         root = vsys_root('<application><entry name="Z-app"/><entry name="a-app"/></application>')
         assert [a["name"] for a in export_custom_applications(root)] == ["a-app", "Z-app"]
+
+    def test_both_roots_none(self):
+        assert export_custom_applications(None, None) == []
+
+    def test_shared_only(self):
+        shared = shared_root('<application><entry name="s-app"><risk>3</risk></entry></application>')
+        assert export_custom_applications(None, shared) == [{
+            "name": "s-app",
+            "category": "business-systems",
+            "subcategory": "other",
+            "technology": "client-server",
+            "risk": 3,
+        }]
+
+    def test_vsys_and_shared_merged_sorted(self):
+        vsys = vsys_root('<application><entry name="Z-app"/></application>')
+        shared = shared_root('<application><entry name="a-app"/></application>')
+        assert [a["name"] for a in export_custom_applications(vsys, shared)] == ["a-app", "Z-app"]
+
+    def test_same_name_both_scopes_kept_twice(self):
+        """#107 convention: no dedupe — one entry per scope, vsys first."""
+        vsys = vsys_root('<application><entry name="dup"><risk>2</risk></entry></application>')
+        shared = shared_root('<application><entry name="dup"><risk>5</risk></entry></application>')
+        out = export_custom_applications(vsys, shared)
+        assert [a["name"] for a in out] == ["dup", "dup"]
+        assert [a["risk"] for a in out] == [2, 5]
