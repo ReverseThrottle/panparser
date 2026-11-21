@@ -64,6 +64,7 @@ from export.objects import (
     export_syslog_server_profiles,
     export_http_server_profiles,
     export_snmp_trap_server_profiles,
+    export_email_server_profiles,
     export_authentication_profiles,
     export_radius_server_profiles,
     export_ldap_server_profiles,
@@ -389,15 +390,18 @@ def build_export(
     schedules               = export_schedules(vsys_root)
     edls                    = export_edls(vsys_root)
     log_forwarding_profiles  = export_log_forwarding_profiles(vsys_root)
-    syslog_server_profiles   = export_syslog_server_profiles(vsys_root)
-    http_server_profiles     = export_http_server_profiles(vsys_root)
-    snmp_v2c_server_profiles, snmp_v3_server_profiles = export_snmp_trap_server_profiles(vsys_root)
-    authentication_profiles  = export_authentication_profiles(vsys_root)
-    radius_server_profiles   = export_radius_server_profiles(vsys_root)
-    ldap_server_profiles     = export_ldap_server_profiles(vsys_root)
-    kerberos_server_profiles = export_kerberos_server_profiles(vsys_root)
-    saml_server_profiles     = export_saml_server_profiles(vsys_root)
-    tacacs_server_profiles   = export_tacacs_server_profiles(vsys_root)
+    # Auth/server profiles merge vsys + shared scopes (#122, #107 convention):
+    # the viewers show both scopes, so the export must carry both.
+    syslog_server_profiles   = export_syslog_server_profiles(vsys_root, shared_root)
+    http_server_profiles     = export_http_server_profiles(vsys_root, shared_root)
+    snmp_v2c_server_profiles, snmp_v3_server_profiles = export_snmp_trap_server_profiles(vsys_root, shared_root)
+    email_server_profiles    = export_email_server_profiles(vsys_root, shared_root)
+    authentication_profiles  = export_authentication_profiles(vsys_root, shared_root)
+    radius_server_profiles   = export_radius_server_profiles(vsys_root, shared_root)
+    ldap_server_profiles     = export_ldap_server_profiles(vsys_root, shared_root)
+    kerberos_server_profiles = export_kerberos_server_profiles(vsys_root, shared_root)
+    saml_server_profiles     = export_saml_server_profiles(vsys_root, shared_root)
+    tacacs_server_profiles   = export_tacacs_server_profiles(vsys_root, shared_root)
     gp_gateways              = export_gp_gateways(vsys_root)
     ssl_profiles             = export_ssl_profiles(shared_root)
 
@@ -427,11 +431,6 @@ def build_export(
         })
 
     # Identity server profiles with encrypted secrets — flag placeholder values
-    _secret_profiles = (
-        [(radius_server_profiles, "objects/radius_server_profiles", "RADIUS")]
-        + [(ldap_server_profiles,   "objects/ldap_server_profiles",   "LDAP") if ldap_server_profiles else []]
-        + [(tacacs_server_profiles, "objects/tacacs_server_profiles", "TACACS+") if tacacs_server_profiles else []]
-    )
     for _items, _path, _label in [(r, p, l) for r, p, l in [
         (radius_server_profiles,   "objects/radius_server_profiles",   "RADIUS"),
         (ldap_server_profiles,     "objects/ldap_server_profiles",     "LDAP"),
@@ -501,6 +500,18 @@ def build_export(
                 "placeholder auth/priv passwords "
                 "('MIGRATION-PLACEHOLDER-AUTHPWD', 'MIGRATION-PLACEHOLDER-PRIVPWD'). "
                 "Update each profile's credentials in SCM after migration."
+            ),
+        })
+    if email_server_profiles:
+        warnings.append({
+            "severity": "warn",
+            "object_path": "objects/email_server_profiles",
+            "message": (
+                f"{len(email_server_profiles)} email server profile(s) exported with "
+                "'MIGRATION-PLACEHOLDER-SECRET' replacing any encrypted SMTP auth "
+                "password. Update each profile's credentials after migration. "
+                "The pan-scm-sdk has no Email Server Profile model to push them "
+                "into; recreate email server profiles manually in SCM if needed."
             ),
         })
 
@@ -807,6 +818,7 @@ def build_export(
             "http_server_profiles": http_server_profiles,
             "snmp_v2c_server_profiles": snmp_v2c_server_profiles,
             "snmp_v3_server_profiles": snmp_v3_server_profiles,
+            "email_server_profiles": email_server_profiles,
             "authentication_profiles": authentication_profiles,
             "radius_server_profiles": radius_server_profiles,
             "ldap_server_profiles": ldap_server_profiles,
@@ -951,6 +963,7 @@ def write_export(data: dict, output_path: str) -> None:
         f"{len(objs.get('http_server_profiles',[]))} http_profiles  "
         f"{len(objs.get('snmp_v2c_server_profiles',[]))} snmp_v2c  "
         f"{len(objs.get('snmp_v3_server_profiles',[]))} snmp_v3  "
+        f"{len(objs.get('email_server_profiles',[]))} email_profiles  "
         f"{len(objs.get('authentication_profiles',[]))} auth_profiles",
         file=sys.stderr,
     )

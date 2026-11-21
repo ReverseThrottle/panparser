@@ -10,6 +10,10 @@ Root placement mirrors real PAN-OS exports:
 - objects (address/service/application/tag/profile/...) under vsys1 + shared
 - network (interfaces, VRs, IKE/IPsec, QoS, VLANs) under devices/entry/network
 - zones under vsys1 (per closed issue #9 — NOT under network)
+- auth/server profiles (#122): authentication-profile + server-profile/{ldap,
+  radius} in both scopes; syslog/snmptrap/email/http under log-settings/
+  (canonical per pan-os-python — NOT server-profile/). Fake encrypted
+  secrets (FAKE-TEST-*) are planted for export leak assertions.
 
 Names are unique and grep-friendly; tests assert them as exact substrings.
 Do not rename entries without updating tests/test_data_getters.py,
@@ -141,9 +145,11 @@ tests/viewer_harness.py expectations.
         <entry name="ldap-main">
           <base>dc=example,dc=local</base>
           <ldap-type>active-directory</ldap-type>
+          <bind-dn>cn=svc-ldap,dc=example,dc=local</bind-dn>
+          <bind-password>FAKE-TEST-SECRET-DO-NOT-USE</bind-password>
           <server>
-            <entry name="dc1"><address>10.0.0.10</address></entry>
-            <entry name="dc2"><address>10.0.0.11</address></entry>
+            <entry name="dc1"><server>10.0.0.10</server></entry>
+            <entry name="dc2"><server>10.0.0.11</server></entry>
           </server>
         </entry>
         <entry name="ldap-nobase">
@@ -152,29 +158,42 @@ tests/viewer_harness.py expectations.
       </ldap>
       <radius>
         <entry name="radius-main">
+          <protocol><CHAP/></protocol>
           <server>
-            <entry name="r1"><address>10.0.0.20</address><protocol>CHAP</protocol></entry>
+            <entry name="r1"><server>10.0.0.20</server><secret>FAKE-TEST-SECRET-DO-NOT-USE</secret></entry>
           </server>
         </entry>
       </radius>
+    </server-profile>
+    <log-settings>
       <syslog>
         <entry name="syslog-main">
           <server>
-            <entry name="siem"><address>10.0.0.30</address></entry>
+            <entry name="siem"><server>10.0.0.30</server></entry>
           </server>
         </entry>
       </syslog>
       <snmptrap>
         <entry name="snmp-main">
-          <server>
-            <entry name="nms"><address>10.0.0.40</address></entry>
-          </server>
+          <version>
+            <v2c>
+              <server>
+                <entry name="nms"><manager>10.0.0.40</manager><community>FAKE-TEST-COMMUNITY-DO-NOT-USE</community></entry>
+              </server>
+            </v2c>
+          </version>
         </entry>
       </snmptrap>
       <email>
         <entry name="email-main">
           <server>
-            <entry name="smtp"><address>10.0.0.50</address></entry>
+            <entry name="smtp">
+              <gateway>10.0.0.50</gateway>
+              <from>pan@example.com</from>
+              <to>noc@example.com</to>
+              <username>smtp-user</username>
+              <password>FAKE-TEST-SECRET-DO-NOT-USE</password>
+            </entry>
           </server>
         </entry>
       </email>
@@ -185,7 +204,7 @@ tests/viewer_harness.py expectations.
           </server>
         </entry>
       </http>
-    </server-profile>
+    </log-settings>
   </shared>
   <devices>
     <entry name="localhost.localdomain">
@@ -388,6 +407,22 @@ tests/viewer_harness.py expectations.
               </entry>
             </custom-url-category>
           </profiles>
+          <authentication-profile>
+            <entry name="auth-vsys">
+              <method><radius><server-profile>radius-vsys</server-profile></radius></method>
+              <allow-list><member>all</member></allow-list>
+            </entry>
+          </authentication-profile>
+          <server-profile>
+            <radius>
+              <entry name="radius-vsys">
+                <protocol><PAP/></protocol>
+                <server>
+                  <entry name="r-vsys"><server>10.1.0.20</server><secret>FAKE-TEST-SECRET-DO-NOT-USE</secret></entry>
+                </server>
+              </entry>
+            </radius>
+          </server-profile>
           <zone>
             <entry name="trust">
               <network>

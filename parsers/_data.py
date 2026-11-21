@@ -353,15 +353,16 @@ def get_certificates(shared_root) -> list[tuple]:
     return rows
 
 
-def get_auth_profiles(shared_root) -> list[tuple]:
-    """(name, method, mfa_enabled, allow_list, user_domain)"""
+def get_auth_profiles(vsys_root, shared_root) -> list[tuple]:
+    """(name, method, mfa_enabled, allow_list, user_domain)
+
+    Merges vsys + shared scopes via iter_entries (#122, #107 convention:
+    same-name entries kept per scope); rows keep the existing name-sort so
+    shared output is unchanged (#122 AC5). Row shape is unchanged — no scope
+    column.
+    """
     rows = []
-    if shared_root is None:
-        return rows
-    container = shared_root.find("authentication-profile")
-    if container is None:
-        return rows
-    for entry in container.findall("entry"):
+    for entry, _ in iter_entries(vsys_root, shared_root, "authentication-profile"):
         name = entry.get("name", "")
         method_el = entry.find("method")
         if method_el is not None:
@@ -576,27 +577,54 @@ def get_url_categories(vsys_root) -> list[tuple]:
     return rows
 
 
+# Canonical PAN-OS containers per type (#122): ldap/radius live under
+# server-profile/, while syslog/snmptrap/email/http live under log-settings/
+# (pan-os-python SyslogServerProfile / SnmpServerProfile / EmailServerProfile
+# / HttpServerProfile xpaths). The exporters read the same containers.
 _SERVER_PROFILE_TYPES = ["ldap", "radius", "syslog", "snmptrap", "email", "http"]
+_SERVER_PROFILE_PATHS = {
+    "ldap": "server-profile/ldap",
+    "radius": "server-profile/radius",
+    "syslog": "log-settings/syslog",
+    "snmptrap": "log-settings/snmptrap",
+    "email": "log-settings/email",
+    "http": "log-settings/http",
+}
 
 
-def get_server_profiles(shared_root) -> list[tuple]:
-    """(profile_type, name, server_count, details)"""
+def get_server_profiles(vsys_root, shared_root) -> list[tuple]:
+    """(profile_type, name, server_count, details)
+
+    Merges vsys + shared scopes (#122, #107 convention: vsys entries first
+    per type, same-name entries kept per scope). Row shape is unchanged —
+    no scope column — so shared rows render exactly as before (#122 AC5).
+    Details read the canonical fields: ldap base/ldap-type, radius the
+    entry-level protocol choice, syslog the server address, snmptrap the
+    first v2c/v3 manager, email the gateway, http the server address.
+    """
     rows = []
-    if shared_root is None:
-        return rows
     for ptype in _SERVER_PROFILE_TYPES:
-        container = shared_root.find(f"server-profile/{ptype}")
-        if container is None:
-            continue
-        for entry in container.findall("entry"):
+        for entry, _ in iter_entries(vsys_root, shared_root, _SERVER_PROFILE_PATHS[ptype]):
             name = entry.get("name", "")
-            server_count = str(len(entry.findall("server/entry")))
-            if ptype == "ldap":
-                details = entry.findtext("base") or entry.findtext("ldap-type") or ""
-            elif ptype == "radius":
-                details = entry.findtext("server/entry/protocol") or ""
+            if ptype == "snmptrap":
+                v2c = entry.findall("version/v2c/server/entry")
+                v3 = entry.findall("version/v3/server/entry")
+                server_count = str(len(v2c) + len(v3))
+                first = next(iter(v2c + v3), None)
+                details = (first.findtext("manager") or "") if first is not None else ""
             else:
-                details = entry.findtext("server/entry/address") or ""
+                server_count = str(len(entry.findall("server/entry")))
+                if ptype == "ldap":
+                    details = entry.findtext("base") or entry.findtext("ldap-type") or ""
+                elif ptype == "radius":
+                    proto_el = entry.find("protocol")
+                    details = next((c.tag for c in proto_el), "") if proto_el is not None else ""
+                elif ptype == "syslog":
+                    details = entry.findtext("server/entry/server") or ""
+                elif ptype == "email":
+                    details = entry.findtext("server/entry/gateway") or ""
+                else:  # http
+                    details = entry.findtext("server/entry/address") or ""
             rows.append((ptype, name, server_count, details))
     return rows
 

@@ -359,11 +359,16 @@ def test_certificates(roots):
 
 
 def test_auth_profiles_method_child_tag(roots):
-    _, shared, _ = roots
-    rows = _data.get_auth_profiles(shared)
-    assert ("auth-local", "local-database", "yes", "all", "example.local") in rows
+    vsys, shared, _ = roots
+    # Issue #122: merged vsys + shared scope; shared rows unchanged (AC5).
+    shared_rows = _data.get_auth_profiles(None, shared)
+    assert ("auth-local", "local-database", "yes", "all", "example.local") in shared_rows
     # no method / no mfa -> method "", mfa defaults "no"
-    assert ("auth-nomethod", "", "no", "", "") in rows
+    assert ("auth-nomethod", "", "no", "", "") in shared_rows
+    rows = _data.get_auth_profiles(vsys, shared)
+    assert ("auth-vsys", "radius", "no", "all", "") in rows
+    # Merged rows keep the existing name-sort (shared output unchanged, AC5).
+    assert rows == sorted(rows, key=lambda r: r[0].lower())
 
 
 def test_ssl_profiles(roots):
@@ -372,14 +377,21 @@ def test_ssl_profiles(roots):
 
 
 def test_server_profiles_details(roots):
-    _, shared, _ = roots
-    rows = {(r[0], r[1]): r for r in _data.get_server_profiles(shared)}
+    vsys, shared, _ = roots
+    # Issue #122: canonical containers (ldap/radius under server-profile/,
+    # syslog/snmptrap/email/http under log-settings/) + merged scope.
+    rows = {(r[0], r[1]): r for r in _data.get_server_profiles(None, shared)}
     assert rows[("ldap", "ldap-main")] == ("ldap", "ldap-main", "2", "dc=example,dc=local")
     # no <base> -> falls back to ldap-type
     assert rows[("ldap", "ldap-nobase")][2:] == ("0", "sun")
     assert rows[("radius", "radius-main")][2:] == ("1", "CHAP")
     assert rows[("syslog", "syslog-main")][2:] == ("1", "10.0.0.30")
+    assert rows[("snmptrap", "snmp-main")][2:] == ("1", "10.0.0.40")
+    assert rows[("email", "email-main")][2:] == ("1", "10.0.0.50")
+    assert rows[("http", "http-main")][2:] == ("1", "10.0.0.60")
     assert {t for t, _ in rows} == {"ldap", "radius", "syslog", "snmptrap", "email", "http"}
+    merged = {(r[0], r[1]): r for r in _data.get_server_profiles(vsys, shared)}
+    assert merged[("radius", "radius-vsys")][2:] == ("1", "PAP")
 
 
 def test_url_categories(roots):

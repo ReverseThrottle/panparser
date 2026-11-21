@@ -175,7 +175,7 @@ Exported to ~/exports/fw1.json  [fw1  PAN-OS 10.2.0]
     "services", "service_groups", "application_groups", "url_categories",
     "custom_applications", "application_filters", "schedules", "edls",
     "log_forwarding_profiles", "syslog_server_profiles", "http_server_profiles",
-    "snmp_v2c_server_profiles", "snmp_v3_server_profiles",
+    "snmp_v2c_server_profiles", "snmp_v3_server_profiles", "email_server_profiles",
     "authentication_profiles", "radius_server_profiles", "ldap_server_profiles",
     "kerberos_server_profiles", "saml_server_profiles", "tacacs_server_profiles",
     "certificates", "gp_portals", "gp_gateways", "ssl_profiles"
