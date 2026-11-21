@@ -343,6 +343,49 @@ def test_scope_label_renders_dim_literal_brackets():
     assert scope_label("vsys") == ""
 
 
+# (#117) Renderers that mark disabled rules in the Name cell, paired with
+# one enabled and one disabled entry name from the sample fixture.
+DISABLED_MARKER_CASES = [
+    (app_override.render_app_override_rules, "app-ov-1", "app-ov-off"),
+    (auth_rules.render_auth_rules, "auth-rule-1", "auth-rule-off"),
+    (decryption.render_decryption_rules, "decrypt-web", "decrypt-off"),
+]
+
+
+@pytest.mark.parametrize("fn,enabled_name,disabled_name", DISABLED_MARKER_CASES,
+                         ids=[fn.__name__ for fn, *_ in DISABLED_MARKER_CASES])
+def test_disabled_rule_renders_visible_marker(fn, enabled_name, disabled_name):
+    """#117 regression: a disabled rule must render a visible "(disabled)"
+    marker (the security/nat pattern). The old "[dim]{name} [disabled][/dim]"
+    let Rich swallow "[disabled]" as an unknown style tag, so disabled rows
+    were indistinguishable from enabled ones in --no-color/piped output.
+    Asserted on Console-rendered text (render_text), not the markup source
+    string — a source pin would keep passing with the bug. Enabled rows in
+    the same render are the control: no marker."""
+    (vsys,) = sample_roots_for("v")
+    text = render_text(fn, vsys)
+    disabled_rows = [line for line in text.splitlines() if disabled_name in line]
+    assert disabled_rows, f"{fn.__name__}: disabled row {disabled_name!r} missing\n{text}"
+    assert any("(disabled)" in line for line in disabled_rows), (
+        f"{fn.__name__}: disabled row has no visible (disabled) marker\n{text}")
+    enabled_rows = [line for line in text.splitlines() if enabled_name in line]
+    assert enabled_rows, f"{fn.__name__}: enabled row {enabled_name!r} missing\n{text}"
+    assert all("(disabled)" not in line for line in enabled_rows), (
+        f"{fn.__name__}: enabled row must not carry the marker\n{text}")
+
+
+def test_no_swallowed_disabled_markup_in_parsers():
+    """Structural guard (#117): no parsers/ module may build the unescaped
+    "[disabled]" markup tag — Rich consumes it as a style tag and the marker
+    silently vanishes (same bug class as #115's "[shared]"). Disabled state
+    renders via the literal "(disabled)" pattern instead. The TUI is exempt:
+    its Text(...) constructor does not parse markup (verified control)."""
+    parsers_dir = Path(__file__).resolve().parent.parent / "parsers"
+    offenders = [p.stem for p in parsers_dir.glob("*.py")
+                 if "[disabled]" in p.read_text()]
+    assert offenders == [], f"unescaped [disabled] markup tag in: {offenders}"
+
+
 def test_renderer_modules_importable():
     """All renderer modules import cleanly (no side effects at import)."""
     for mod, *_ in RENDERERS:
