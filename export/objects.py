@@ -2985,15 +2985,15 @@ def export_log_forwarding_profiles(vsys_root) -> list[dict]:
     return out
 
 
-def export_syslog_server_profiles(vsys_root) -> list[dict]:
-    """Export syslog server profiles from vsys/log-settings/syslog."""
+def export_syslog_server_profiles(vsys_root, shared_root=None) -> list[dict]:
+    """Export syslog server profiles from log-settings/syslog (vsys + shared).
+
+    Canonical container per pan-os-python SyslogServerProfile (#122). Merges
+    vsys and shared scopes (vsys entries first, issue #107); same-name entries
+    in both scopes are both kept, like the other shared-merged exporters.
+    """
     out = []
-    if vsys_root is None:
-        return out
-    container = vsys_root.find("log-settings/syslog")
-    if container is None:
-        return out
-    for entry in container.findall("entry"):
+    for entry, _ in iter_entries(vsys_root, shared_root, "log-settings/syslog"):
         name = entry.get("name", "")
         servers = []
         for srv in entry.findall("server/entry"):
@@ -3019,15 +3019,15 @@ def export_syslog_server_profiles(vsys_root) -> list[dict]:
     return out
 
 
-def export_http_server_profiles(vsys_root) -> list[dict]:
-    """Export HTTP server profiles from vsys/log-settings/http."""
+def export_http_server_profiles(vsys_root, shared_root=None) -> list[dict]:
+    """Export HTTP server profiles from log-settings/http (vsys + shared).
+
+    Canonical container per pan-os-python HttpServerProfile (#122). Merges
+    vsys and shared scopes (vsys entries first, issue #107); same-name entries
+    in both scopes are both kept, like the other shared-merged exporters.
+    """
     out = []
-    if vsys_root is None:
-        return out
-    container = vsys_root.find("log-settings/http")
-    if container is None:
-        return out
-    for entry in container.findall("entry"):
+    for entry, _ in iter_entries(vsys_root, shared_root, "log-settings/http"):
         name = entry.get("name", "")
         servers = []
         for srv in entry.findall("server/entry"):
@@ -3052,8 +3052,12 @@ def export_http_server_profiles(vsys_root) -> list[dict]:
     return out
 
 
-def export_snmp_trap_server_profiles(vsys_root) -> tuple[list[dict], list[dict]]:
-    """Export SNMP trap server profiles from vsys/log-settings/snmptrap.
+def export_snmp_trap_server_profiles(vsys_root, shared_root=None) -> tuple[list[dict], list[dict]]:
+    """Export SNMP trap server profiles from log-settings/snmptrap (vsys + shared).
+
+    Canonical container per pan-os-python SnmpServerProfile (#122). Merges
+    vsys and shared scopes (vsys entries first, issue #107); same-name entries
+    in both scopes are both kept, like the other shared-merged exporters.
 
     Splits profiles into SNMPv2c and SNMPv3 lists based on the <version> child
     tag.  Encrypted secrets (community / authpwd / privpwd) are replaced with
@@ -3063,12 +3067,7 @@ def export_snmp_trap_server_profiles(vsys_root) -> tuple[list[dict], list[dict]]
     """
     v2c_out: list[dict] = []
     v3_out: list[dict] = []
-    if vsys_root is None:
-        return v2c_out, v3_out
-    container = vsys_root.find("log-settings/snmptrap")
-    if container is None:
-        return v2c_out, v3_out
-    for entry in container.findall("entry"):
+    for entry, _ in iter_entries(vsys_root, shared_root, "log-settings/snmptrap"):
         name = entry.get("name", "")
         version_el = entry.find("version")
         if version_el is None:
@@ -3105,8 +3104,67 @@ def export_snmp_trap_server_profiles(vsys_root) -> tuple[list[dict], list[dict]]
     return v2c_out, v3_out
 
 
-def export_authentication_profiles(vsys_root) -> list[dict]:
-    """Export authentication profiles from vsys/authentication-profile.
+def export_email_server_profiles(vsys_root, shared_root=None) -> list[dict]:
+    """Export email server profiles from log-settings/email (vsys + shared).
+
+    Canonical container per pan-os-python EmailServerProfile (#122). Merges
+    vsys and shared scopes (vsys entries first, issue #107); same-name entries
+    in both scopes are both kept, like the other shared-merged exporters.
+
+    New export surface (#122 Correction 2): the email family had no exporter
+    at all while the viewer showed it. Server fields follow pan-os-python
+    EmailServer (gateway/from/to/and-also-to, protocol default SMTP, port
+    default 25, plus the PAN-OS 10.0+ TLS/auth fields). The SMTP auth
+    password is encrypted in PAN-OS XML — replaced with
+    MIGRATION-PLACEHOLDER-SECRET. pan-scm-sdk 0.14.0 has no EmailServerProfile
+    model; the writer emits a no-model migration warning (ssl/snmp precedent).
+    """
+    out = []
+    for entry, _ in iter_entries(vsys_root, shared_root, "log-settings/email"):
+        name = entry.get("name", "")
+        servers = []
+        for srv in entry.findall("server/entry"):
+            port_raw = srv.findtext("port") or "25"
+            try:
+                port = int(port_raw)
+            except ValueError:
+                port = 25
+            s: dict = {
+                "name": srv.get("name", ""),
+                "gateway": srv.findtext("gateway") or "",
+                "from": srv.findtext("from") or "",
+                "to": srv.findtext("to") or "",
+                "protocol": srv.findtext("protocol") or "SMTP",
+                "port": port,
+            }
+            for xml_tag, key in (
+                ("display-name", "display_name"),
+                ("and-also-to", "also_to"),
+                ("tls-version", "tls_version"),
+                ("auth", "auth"),
+                ("certificate-profile", "certificate_profile"),
+                ("username", "username"),
+            ):
+                val = srv.findtext(xml_tag)
+                if val:
+                    s[key] = val
+            if srv.findtext("password"):
+                s["password"] = "MIGRATION-PLACEHOLDER-SECRET"
+            servers.append(s)
+        d: dict = {"name": name}
+        if servers:
+            d["server"] = servers
+        out.append(d)
+    out.sort(key=lambda x: x["name"].lower())
+    return out
+
+
+def export_authentication_profiles(vsys_root, shared_root=None) -> list[dict]:
+    """Export authentication profiles from authentication-profile (vsys + shared).
+
+    Merges vsys and shared scopes (vsys entries first, issue #107); same-name
+    entries in both scopes are both kept, like the other shared-merged
+    exporters (#122).
 
     Exports name, allow_list, and method type. LDAP/RADIUS profiles reference
     server profiles that may not exist in SCM — push will fail gracefully for
@@ -3121,12 +3179,7 @@ def export_authentication_profiles(vsys_root) -> list[dict]:
         "kerberos": "kerberos",
     }
     out = []
-    if vsys_root is None:
-        return out
-    container = vsys_root.find("authentication-profile")
-    if container is None:
-        return out
-    for entry in container.findall("entry"):
+    for entry, _ in iter_entries(vsys_root, shared_root, "authentication-profile"):
         name = entry.get("name", "")
         desc = entry.findtext("description") or ""
         allow_list = get_members(entry, "allow-list/member")
@@ -3169,18 +3222,19 @@ def export_authentication_profiles(vsys_root) -> list[dict]:
     return out
 
 
-def export_radius_server_profiles(vsys_root) -> list[dict]:
-    """Export RADIUS server profiles from vsys/server-profile/radius.
+def export_radius_server_profiles(vsys_root, shared_root=None) -> list[dict]:
+    """Export RADIUS server profiles from server-profile/radius (vsys + shared).
+
+    Canonical container per real PAN-OS export structure (#122) — the same
+    placement the viewers and sample use; pan-os-python 1.13.1 has no RADIUS
+    model to cite. Merges vsys and shared scopes (vsys entries first, issue
+    #107); same-name entries in both scopes are both kept, like the other
+    shared-merged exporters.
 
     Secrets are encrypted in PAN-OS XML — replaced with MIGRATION-PLACEHOLDER-SECRET.
     """
     out = []
-    if vsys_root is None:
-        return out
-    container = vsys_root.find("server-profile/radius")
-    if container is None:
-        return out
-    for entry in container.findall("entry"):
+    for entry, _ in iter_entries(vsys_root, shared_root, "server-profile/radius"):
         name = entry.get("name", "")
         servers = []
         for srv in entry.findall("server/entry"):
@@ -3231,8 +3285,12 @@ def export_radius_server_profiles(vsys_root) -> list[dict]:
     return out
 
 
-def export_ldap_server_profiles(vsys_root) -> list[dict]:
-    """Export LDAP server profiles from vsys/server-profile/ldap.
+def export_ldap_server_profiles(vsys_root, shared_root=None) -> list[dict]:
+    """Export LDAP server profiles from server-profile/ldap (vsys + shared).
+
+    Canonical container per pan-os-python LdapServerProfile (#122). Merges
+    vsys and shared scopes (vsys entries first, issue #107); same-name entries
+    in both scopes are both kept, like the other shared-merged exporters.
 
     bind-password is encrypted in PAN-OS XML — replaced with MIGRATION-PLACEHOLDER-SECRET.
     """
@@ -3243,12 +3301,7 @@ def export_ldap_server_profiles(vsys_root) -> list[dict]:
         "other": "other",
     }
     out = []
-    if vsys_root is None:
-        return out
-    container = vsys_root.find("server-profile/ldap")
-    if container is None:
-        return out
-    for entry in container.findall("entry"):
+    for entry, _ in iter_entries(vsys_root, shared_root, "server-profile/ldap"):
         name = entry.get("name", "")
         servers = []
         for srv in entry.findall("server/entry"):
@@ -3304,15 +3357,15 @@ def export_ldap_server_profiles(vsys_root) -> list[dict]:
     return out
 
 
-def export_kerberos_server_profiles(vsys_root) -> list[dict]:
-    """Export Kerberos server profiles from vsys/server-profile/kerberos."""
+def export_kerberos_server_profiles(vsys_root, shared_root=None) -> list[dict]:
+    """Export Kerberos server profiles from server-profile/kerberos (vsys + shared).
+
+    Merges vsys and shared scopes (vsys entries first, issue #107); same-name
+    entries in both scopes are both kept (#122). Exporter-only family: no
+    viewer surface exists for kerberos (parity is export ⊇ viewer).
+    """
     out = []
-    if vsys_root is None:
-        return out
-    container = vsys_root.find("server-profile/kerberos")
-    if container is None:
-        return out
-    for entry in container.findall("entry"):
+    for entry, _ in iter_entries(vsys_root, shared_root, "server-profile/kerberos"):
         name = entry.get("name", "")
         servers = []
         for srv in entry.findall("server/entry"):
@@ -3335,20 +3388,19 @@ def export_kerberos_server_profiles(vsys_root) -> list[dict]:
     return out
 
 
-def export_saml_server_profiles(vsys_root) -> list[dict]:
-    """Export SAML IdP server profiles from vsys/server-profile/saml.
+def export_saml_server_profiles(vsys_root, shared_root=None) -> list[dict]:
+    """Export SAML IdP server profiles from server-profile/saml (vsys + shared).
+
+    Merges vsys and shared scopes (vsys entries first, issue #107); same-name
+    entries in both scopes are both kept (#122). Exporter-only family: no
+    viewer surface exists for saml (parity is export ⊇ viewer).
 
     Requires entity_id, certificate, sso_url, and sso_bindings in SCM.
     Profiles missing required fields are included as-is; push will fail
     gracefully if the SCM certificate object doesn't exist.
     """
     out = []
-    if vsys_root is None:
-        return out
-    container = vsys_root.find("server-profile/saml")
-    if container is None:
-        return out
-    for entry in container.findall("entry"):
+    for entry, _ in iter_entries(vsys_root, shared_root, "server-profile/saml"):
         name = entry.get("name", "")
         entity_id = entry.findtext("entity-id") or ""
         certificate = entry.findtext("certificate") or ""
@@ -3727,18 +3779,17 @@ def export_high_availability(root) -> dict:
     return d
 
 
-def export_tacacs_server_profiles(vsys_root) -> list[dict]:
-    """Export TACACS+ server profiles from vsys/server-profile/tacacs-plus.
+def export_tacacs_server_profiles(vsys_root, shared_root=None) -> list[dict]:
+    """Export TACACS+ server profiles from server-profile/tacacs-plus (vsys + shared).
+
+    Merges vsys and shared scopes (vsys entries first, issue #107); same-name
+    entries in both scopes are both kept (#122). Exporter-only family: no
+    viewer surface exists for tacacs (parity is export ⊇ viewer).
 
     Secrets are encrypted in PAN-OS XML — replaced with MIGRATION-PLACEHOLDER-SECRET.
     """
     out = []
-    if vsys_root is None:
-        return out
-    container = vsys_root.find("server-profile/tacacs-plus")
-    if container is None:
-        return out
-    for entry in container.findall("entry"):
+    for entry, _ in iter_entries(vsys_root, shared_root, "server-profile/tacacs-plus"):
         name = entry.get("name", "")
         servers = []
         for srv in entry.findall("server/entry"):
