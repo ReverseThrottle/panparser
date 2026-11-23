@@ -879,9 +879,9 @@ def build_export(
 
     # Trailing-underscore normalization (#93), opt-in via normalize_names:
     # every named object in every exported collection participates, and
-    # references are rewritten export-wide. Warnings must be appended BEFORE _apply_renames, which
-    # rebuilds every list/dict — appending to `warnings` afterwards would
-    # orphan them from the returned data.
+    # references are rewritten export-wide. Warnings must be appended BEFORE
+    # _apply_renames, which rebuilds every list/dict — appending to
+    # `warnings` afterwards would orphan them from the returned data.
     rename_map: dict[str, str] = {}
     skipped: list[str] = []
     if normalize_names:

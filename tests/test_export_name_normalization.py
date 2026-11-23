@@ -26,8 +26,9 @@ The normalization contract, decided once and pinned here:
 """
 from __future__ import annotations
 
-import pytest
 import xml.etree.ElementTree as ET
+
+import pytest
 
 from export.writer import (
     _apply_renames,
@@ -465,7 +466,6 @@ def _run_main(monkeypatch, tmp_path, *flags):
 
     cfg = tmp_path / "c.xml"
     cfg.write_text(_MIN_CONFIG, encoding="utf-8")
-    out = tmp_path / "out.json"
     seen = {}
 
     def fake_build_export(*args, **kwargs):
@@ -496,6 +496,12 @@ def test_main_passes_normalize_names_false_by_default(monkeypatch, tmp_path):
 def test_main_warns_when_normalize_names_without_output(
     monkeypatch, tmp_path, capsys
 ):
-    with pytest.raises(BaseException):
-        _run_main(monkeypatch, tmp_path, "--normalize-names", "--no-color")
+    import panparser
+
+    cfg = tmp_path / "c.xml"
+    cfg.write_text(_MIN_CONFIG, encoding="utf-8")
+    monkeypatch.setattr(
+        "sys.argv", ["panparser", str(cfg), "--normalize-names", "--no-color"]
+    )
+    panparser.main()  # display mode returns normally
     assert "--normalize-names only applies with --output" in capsys.readouterr().err
