@@ -399,9 +399,9 @@ def build_export(
 
     custom_applications     = export_custom_applications(vsys_root, shared_root)
     application_filters     = export_application_filters(vsys_root, shared_root)
-    schedules               = export_schedules(vsys_root)
+    schedules               = export_schedules(vsys_root, shared_root)
     edls                    = export_edls(vsys_root, shared_root)
-    log_forwarding_profiles  = export_log_forwarding_profiles(vsys_root)
+    log_forwarding_profiles  = export_log_forwarding_profiles(vsys_root, shared_root)
     # Auth/server profiles merge vsys + shared scopes (#122, #107 convention):
     # the viewers show both scopes, so the export must carry both.
     syslog_server_profiles   = export_syslog_server_profiles(vsys_root, shared_root)
