@@ -194,3 +194,87 @@ class TestExportEdls:
         """)
         out = export_edls(_vsys(xml))
         assert [e["name"] for e in out] == ["a-list", "Z-list"]
+
+
+def _scoped(vsys_inner: str = "", shared_inner: str = ""):
+    """Return (vsys_root, shared_root) with EDLs in each scope."""
+    vsys = _vsys(_edls(vsys_inner)) if vsys_inner else _vsys("")
+    shared = ET.fromstring(f"<shared>{_edls(shared_inner)}</shared>") if shared_inner else None
+    return vsys, shared
+
+
+_IP = '<entry name="{n}"><type><ip><url>https://x.example/{n}.txt</url></ip></type></entry>'
+_DOM = '<entry name="{n}"><type><domain><url>https://x.example/{n}.txt</url></domain></type></entry>'
+_URL = '<entry name="{n}"><type><url><url>https://x.example/{n}.txt</url></url></type></entry>'
+
+
+class TestExportEdlsSharedScope:
+    """Panorama keeps EDLs under <shared>; export must merge vsys + shared."""
+
+    def test_shared_only_edls_exported(self):
+        vsys, shared = _scoped(shared_inner=_IP.format(n="sh-ip"))
+        out = export_edls(vsys, shared)
+        assert [e["name"] for e in out] == ["sh-ip"]
+
+    def test_shared_only_with_vsys_root_none(self):
+        _, shared = _scoped(shared_inner=_IP.format(n="sh-ip"))
+        assert [e["name"] for e in export_edls(None, shared)] == ["sh-ip"]
+
+    def test_vsys_only_with_shared_root_present(self):
+        vsys, _ = _scoped(vsys_inner=_IP.format(n="v-ip"))
+        shared = ET.fromstring("<shared/>")
+        assert [e["name"] for e in export_edls(vsys, shared)] == ["v-ip"]
+
+    def test_vsys_only_without_shared_arg_unchanged(self):
+        vsys, _ = _scoped(vsys_inner=_IP.format(n="v-ip"))
+        assert [e["name"] for e in export_edls(vsys)] == ["v-ip"]
+
+    def test_all_types_from_shared(self):
+        def full(kind: str, name: str) -> str:
+            return (
+                f'<entry name="{name}"><type><{kind}>'
+                f"<url>https://x.example/{name}.txt</url>"
+                "<recurring><daily><at>03</at></daily></recurring>"
+                "<exception-list><member>exc-1</member><member>exc-2</member>"
+                f"</exception-list></{kind}></type></entry>"
+            )
+
+        inner = full("ip", "i") + full("domain", "d") + full("url", "u")
+        vsys, shared = _scoped(shared_inner=inner)
+        out = {e["name"]: e for e in export_edls(vsys, shared)}
+        for name, kind in (("i", "ip"), ("d", "domain"), ("u", "url")):
+            assert out[name]["type"] == {kind: {
+                "url": f"https://x.example/{name}.txt",
+                "recurring": {"daily": {"at": "03"}},
+                "exception_list": ["exc-1", "exc-2"],
+            }}
+
+    def test_build_export_includes_shared_edls(self):
+        """Wiring guard: build_export must pass shared_root to export_edls."""
+        from export.writer import build_export
+
+        root = ET.fromstring("<config version='11.0.0'/>")
+        vsys, shared = _scoped(
+            vsys_inner=_IP.format(n="v-ip"), shared_inner=_DOM.format(n="sh-dom"))
+        data = build_export(root, vsys, shared, None, "x.xml", "vsys1")
+        assert [e["name"] for e in data["objects"]["edls"]] == ["sh-dom", "v-ip"]
+
+    def test_both_scopes_merged_and_sorted(self):
+        vsys, shared = _scoped(
+            vsys_inner=_IP.format(n="b-v"), shared_inner=_DOM.format(n="a-s"))
+        assert [e["name"] for e in export_edls(vsys, shared)] == ["a-s", "b-v"]
+
+    def test_name_collision_kept_once_per_scope(self):
+        """#107 convention: same-name entries in both scopes appear twice."""
+        vsys, shared = _scoped(
+            vsys_inner=_IP.format(n="dup"), shared_inner=_DOM.format(n="dup"))
+        out = export_edls(vsys, shared)
+        assert [e["name"] for e in out] == ["dup", "dup"]
+        assert list(out[0]["type"]) == ["ip"]  # vsys first
+        assert list(out[1]["type"]) == ["domain"]
+
+    def test_predefined_in_shared_still_skipped(self):
+        vsys, shared = _scoped(
+            shared_inner='<entry name="pre"><type><predefined/></type></entry>'
+                         + _IP.format(n="real"))
+        assert [e["name"] for e in export_edls(vsys, shared)] == ["real"]
