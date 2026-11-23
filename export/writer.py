@@ -877,9 +877,9 @@ def build_export(
     if botnet_report:
         data["shared"] = {"botnet_report": botnet_report}
 
-    # Trailing-underscore normalization (#93), opt-in via normalize_names: every named object in every
-    # exported collection participates, and references are rewritten
-    # export-wide. Warnings must be appended BEFORE _apply_renames, which
+    # Trailing-underscore normalization (#93), opt-in via normalize_names:
+    # every named object in every exported collection participates, and
+    # references are rewritten export-wide. Warnings must be appended BEFORE _apply_renames, which
     # rebuilds every list/dict — appending to `warnings` afterwards would
     # orphan them from the returned data.
     rename_map: dict[str, str] = {}
@@ -904,7 +904,7 @@ def build_export(
                 f"{len(skipped)} object name(s) with trailing underscores were left "
                 "unchanged because the normalized name already exists or is "
                 f"ambiguous: {', '.join(sorted(skipped))}. Rename them manually "
-                "before importing to SCM."
+                "if your workflow requires names without trailing underscores."
             ),
         })
     if rename_map:

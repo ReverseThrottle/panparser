@@ -160,6 +160,8 @@ python3 -m panparser running-config.xml --output ~/exports/fw1.json --normalize-
 
 **Object names are preserved exactly as they appear in the source config**, including trailing
 underscores (SCM accepts them; in many configs `foo` and `foo_` are deliberately distinct objects).
+In the default mode names like `foo` and `foo_` stay distinct: nothing is renamed and no rename
+warnings are emitted.
 Pass `--normalize-names` only if your tenant or workflow wants trailing underscores stripped: every
 named object is renamed `foo_` -> `foo`, references are rewritten export-wide, and a rename is
 skipped (with a `migration_warnings` entry) when the stripped name already exists or would be

@@ -242,6 +242,11 @@ class _ViewerConsole(Console):
 
 def main() -> None:
     args = parse_args()
+    if args.normalize_names and not args.output:
+        print(
+            "Warning: --normalize-names only applies with --output; ignoring.",
+            file=sys.stderr,
+        )
 
     root = load_config(args.config)
     try:

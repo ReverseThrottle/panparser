@@ -26,6 +26,7 @@ The normalization contract, decided once and pinned here:
 """
 from __future__ import annotations
 
+import pytest
 import xml.etree.ElementTree as ET
 
 from export.writer import (
@@ -451,4 +452,50 @@ def test_opt_in_collision_still_guarded_with_warning():
     assert names == ["foo", "foo_"]  # collision guard keeps both
     warns = [w for w in _name_warnings(data) if w["severity"] == "warn"]
     assert len(warns) == 1 and "foo_" in warns[0]["message"]
+    assert "if your workflow requires names without trailing underscores" in warns[0]["message"]
+    assert "before importing to SCM" not in warns[0]["message"]
     assert data["objects"]["address_groups"][0]["name"] == "grp"
+
+
+_MIN_CONFIG = "<config version='11.1.0'><devices><entry name='localhost.localdomain'><vsys><entry name='vsys1'/></vsys></entry></devices></config>"
+
+
+def _run_main(monkeypatch, tmp_path, *flags):
+    import panparser
+
+    cfg = tmp_path / "c.xml"
+    cfg.write_text(_MIN_CONFIG, encoding="utf-8")
+    out = tmp_path / "out.json"
+    seen = {}
+
+    def fake_build_export(*args, **kwargs):
+        seen.update(kwargs)
+        return {}
+
+    monkeypatch.setattr("export.writer.build_export", fake_build_export)
+    monkeypatch.setattr("export.writer.write_export", lambda d, p: None)
+    argv = ["panparser", str(cfg), *flags]
+    monkeypatch.setattr("sys.argv", argv)
+    with pytest.raises(SystemExit):
+        panparser.main()
+    return seen
+
+
+def test_main_passes_normalize_names_true(monkeypatch, tmp_path):
+    out = str(tmp_path / "o.json")
+    seen = _run_main(monkeypatch, tmp_path, "--output", out, "--normalize-names")
+    assert seen["normalize_names"] is True
+
+
+def test_main_passes_normalize_names_false_by_default(monkeypatch, tmp_path):
+    out = str(tmp_path / "o.json")
+    seen = _run_main(monkeypatch, tmp_path, "--output", out)
+    assert seen["normalize_names"] is False
+
+
+def test_main_warns_when_normalize_names_without_output(
+    monkeypatch, tmp_path, capsys
+):
+    with pytest.raises(BaseException):
+        _run_main(monkeypatch, tmp_path, "--normalize-names", "--no-color")
+    assert "--normalize-names only applies with --output" in capsys.readouterr().err
