@@ -2868,20 +2868,19 @@ def export_schedules(vsys_root) -> list[dict]:
     return out
 
 
-def export_edls(vsys_root) -> list[dict]:
-    """Export External Dynamic List (EDL) objects from vsys/external-list.
+def export_edls(vsys_root, shared_root=None) -> list[dict]:
+    """Export External Dynamic List (EDL) objects from vsys + shared scopes.
+
+    Merges via iter_entries (vsys first, then shared), matching the #107
+    shared-merge convention: an entry present in both scopes appears twice,
+    one per scope — no dedupe. Panorama configs keep EDLs under <shared>.
 
     Supports ip, domain, and url EDL types with recurring schedules.
     Exception lists are preserved. Predefined EDLs are skipped (read-only in SCM).
     """
     _EDL_TYPES = ("ip", "domain", "url")
     out = []
-    if vsys_root is None:
-        return out
-    container = vsys_root.find("external-list")
-    if container is None:
-        return out
-    for entry in container.findall("entry"):
+    for entry, _ in iter_entries(vsys_root, shared_root, "external-list"):
         name = entry.get("name", "")
         type_el = entry.find("type")
         if type_el is None:
