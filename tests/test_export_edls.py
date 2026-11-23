@@ -230,12 +230,34 @@ class TestExportEdlsSharedScope:
         assert [e["name"] for e in export_edls(vsys)] == ["v-ip"]
 
     def test_all_types_from_shared(self):
-        inner = _IP.format(n="i") + _DOM.format(n="d") + _URL.format(n="u")
+        def full(kind: str, name: str) -> str:
+            return (
+                f'<entry name="{name}"><type><{kind}>'
+                f"<url>https://x.example/{name}.txt</url>"
+                "<recurring><daily><at>03</at></daily></recurring>"
+                "<exception-list><member>exc-1</member><member>exc-2</member>"
+                f"</exception-list></{kind}></type></entry>"
+            )
+
+        inner = full("ip", "i") + full("domain", "d") + full("url", "u")
         vsys, shared = _scoped(shared_inner=inner)
         out = {e["name"]: e for e in export_edls(vsys, shared)}
-        assert set(out["i"]["type"]) == {"ip"}
-        assert set(out["d"]["type"]) == {"domain"}
-        assert set(out["u"]["type"]) == {"url"}
+        for name, kind in (("i", "ip"), ("d", "domain"), ("u", "url")):
+            assert out[name]["type"] == {kind: {
+                "url": f"https://x.example/{name}.txt",
+                "recurring": {"daily": {"at": "03"}},
+                "exception_list": ["exc-1", "exc-2"],
+            }}
+
+    def test_build_export_includes_shared_edls(self):
+        """Wiring guard: build_export must pass shared_root to export_edls."""
+        from export.writer import build_export
+
+        root = ET.fromstring("<config version='11.0.0'/>")
+        vsys, shared = _scoped(
+            vsys_inner=_IP.format(n="v-ip"), shared_inner=_DOM.format(n="sh-dom"))
+        data = build_export(root, vsys, shared, None, "x.xml", "vsys1")
+        assert [e["name"] for e in data["objects"]["edls"]] == ["sh-dom", "v-ip"]
 
     def test_both_scopes_merged_and_sorted(self):
         vsys, shared = _scoped(
