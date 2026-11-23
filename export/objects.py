@@ -2820,20 +2820,18 @@ def export_application_filters(vsys_root, shared_root=None) -> list[dict]:
     return out
 
 
-def export_schedules(vsys_root) -> list[dict]:
-    """Export schedule objects from vsys/schedule.
+def export_schedules(vsys_root, shared_root=None) -> list[dict]:
+    """Export schedule objects from vsys/schedule + shared/schedule.
+
+    Merges via iter_entries (vsys first, then shared); same-name entries in
+    both scopes are kept once per scope (#107 convention, #129).
 
     PAN-OS weekly days use text content (e.g. <monday>09:00-17:00</monday>),
     not member elements. Multiple ranges within a day are comma-separated.
     """
     _DAYS = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
     out = []
-    if vsys_root is None:
-        return out
-    container = vsys_root.find("schedule")
-    if container is None:
-        return out
-    for entry in container.findall("entry"):
+    for entry, _ in iter_entries(vsys_root, shared_root, "schedule"):
         name = entry.get("name", "")
         sched_type: dict = {}
 
@@ -2939,20 +2937,18 @@ def export_edls(vsys_root, shared_root=None) -> list[dict]:
     return out
 
 
-def export_log_forwarding_profiles(vsys_root) -> list[dict]:
-    """Export log forwarding profiles from vsys/log-settings/profiles.
+def export_log_forwarding_profiles(vsys_root, shared_root=None) -> list[dict]:
+    """Export log forwarding profiles from log-settings/profiles (vsys + shared).
+
+    Merges via iter_entries (vsys first, then shared); same-name entries in
+    both scopes are kept once per scope (#107 convention, #129).
 
     The send_syslog / send_http forwarding destinations are exported by name
     for reference but not included in the push payload — those server profile
     references must be wired up manually in SCM after migration.
     """
     out = []
-    if vsys_root is None:
-        return out
-    container = vsys_root.find("log-settings/profiles")
-    if container is None:
-        return out
-    for entry in container.findall("entry"):
+    for entry, _ in iter_entries(vsys_root, shared_root, "log-settings/profiles"):
         name = entry.get("name", "")
         desc = entry.findtext("description") or ""
         d: dict = {"name": name}
