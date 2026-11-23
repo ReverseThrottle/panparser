@@ -103,6 +103,35 @@ def test_readme_ci_python_versions_match_matrix():
     )
 
 
+def test_readme_known_limitations_names_email_server_profiles():
+    """#125: the Known Limitations section must name the email family.
+
+    Email server profiles are exported with MIGRATION-PLACEHOLDER-SECRET
+    (the SMTP auth password is encrypted in PAN-OS XML and cannot be
+    recovered) and pan-scm-sdk 0.14.0 has no EmailServerProfile model, so
+    exported profiles cannot be pushed to SCM — the writer emits a runtime
+    migration warning when they are present. That limitation is only
+    discoverable at runtime unless the README documents it, so the Known
+    Limitations section must name the email family. A future export-surface
+    addition that emits a "recreate manually" warning without a docs entry
+    fails CI here.
+    """
+    # Known Limitations block: everything after the section header up to the
+    # next top-level heading. Anchor on a newline so `### ` subsections are
+    # not mistaken for the `## `-level boundary (the trailing `---` separator
+    # / Development section).
+    tail = README.split("## Known Limitations", 1)[1]
+    section = tail.split("\n## ", 1)[0]
+    assert re.search(r"### Email Server Profiles", section), (
+        "README Known Limitations must document the email server profile "
+        "limitation (MIGRATION-PLACEHOLDER-SECRET, no SCM model to push into)"
+    )
+    assert "MIGRATION-PLACEHOLDER-SECRET" in section, (
+        "README Known Limitations email entry must name the "
+        "MIGRATION-PLACEHOLDER-SECRET placeholder"
+    )
+
+
 def _module_source(module: str) -> Path | None:
     """Repo-local source file for a dotted module name, if it exists."""
     rel = module.replace(".", "/")
