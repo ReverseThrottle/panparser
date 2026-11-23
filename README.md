@@ -252,6 +252,14 @@ protocol entries even when `enable: false`. Protocols with `enable: false` are r
 protocol had non-default rates configured, those will need to be set manually once
 re-enabled in SCM.
 
+### Email Server Profiles
+
+PAN-OS encrypts SMTP auth passwords in the XML config — they cannot be recovered. Email
+server profiles are exported with the placeholder `MIGRATION-PLACEHOLDER-SECRET` replacing
+any encrypted SMTP auth password. pan-scm-sdk 0.14.0 has no EmailServerProfile model to push
+them into — the export emits a runtime migration warning when email server profiles are
+present, and the profiles must be recreated manually in SCM after migration if needed.
+
 ---
 
 ## Development / Running the tests
