@@ -132,6 +132,11 @@ def parse_args() -> argparse.Namespace:
         "--force", action="store_true",
         help="Overwrite output file if it already exists (used with --output).",
     )
+    parser.add_argument(
+        "--normalize-names", action="store_true",
+        help="With --output: strip trailing underscores from object names and "
+             "rewrite references (default: names are preserved exactly).",
+    )
     return parser.parse_args()
 
 
@@ -266,6 +271,7 @@ def main() -> None:
         data = build_export(
             root, vsys_root, shared_root, network_root,
             source_file=args.config, vsys=args.vsys,
+            normalize_names=args.normalize_names,
         )
         try:
             write_export(data, args.output)

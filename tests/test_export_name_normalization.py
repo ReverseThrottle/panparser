@@ -1,4 +1,11 @@
-"""Regression tests for issue #93: trailing-underscore name normalization.
+"""Tests for trailing-underscore name handling (issue #93).
+
+Normalization is OPT-IN (``normalize_names=True`` / ``--normalize-names``);
+by default names are preserved exactly. The ``_export`` helper here defaults to
+opt-in so the original #93 coverage below exercises the normalization path;
+the default-mode tests at the bottom pass ``normalize_names=False``.
+
+Original #93 regression notes:
 
 The normalization contract, decided once and pinned here:
 
@@ -30,7 +37,9 @@ from export.writer import (
 )
 
 
-def _export(vsys_xml: str = "", network_xml: str = "") -> dict:
+def _export(
+    vsys_xml: str = "", network_xml: str = "", normalize_names: bool = True
+) -> dict:
     return build_export(
         ET.fromstring("<config version='11.1.0'/>"),
         ET.fromstring(f"<vsys>{vsys_xml}</vsys>"),
@@ -38,6 +47,7 @@ def _export(vsys_xml: str = "", network_xml: str = "") -> dict:
         ET.fromstring(f"<network>{network_xml}</network>"),
         "fixture.xml",
         "vsys1",
+        normalize_names=normalize_names,
     )
 
 
@@ -372,3 +382,73 @@ def test_e2e_info_warning_truncates_long_rename_list():
     assert len(infos) == 1
     assert "Normalized 12 object name(s)" in infos[0]["message"]
     assert infos[0]["message"].endswith("...")
+
+
+# --------------------------------------------------------------------------
+# Default mode: names preserved exactly, no rename warnings
+# --------------------------------------------------------------------------
+
+DEFAULT_VSYS = """
+<address>
+  <entry name="foo"><ip-netmask>10.0.0.1/32</ip-netmask></entry>
+  <entry name="foo_"><ip-netmask>10.0.0.2/32</ip-netmask></entry>
+</address>
+<address-group>
+  <entry name="grp_"><static><member>foo_</member><member>foo</member></static></entry>
+</address-group>
+<rulebase><security><rules>
+  <entry name="allow_">
+    <from><member>trust</member></from>
+    <to><member>untrust</member></to>
+    <source><member>grp_</member></source>
+    <destination><member>foo_</member></destination>
+    <application><member>any</member></application>
+    <service><member>application-default</member></service>
+    <action>allow</action>
+  </entry>
+</rules></security></rulebase>
+"""
+
+
+def test_default_preserves_trailing_underscores_and_references():
+    data = _export(DEFAULT_VSYS, normalize_names=False)
+    assert [a["name"] for a in data["objects"]["addresses"]] == ["foo", "foo_"]
+    grp = data["objects"]["address_groups"][0]
+    assert grp["name"] == "grp_"
+    assert grp["static"] == ["foo_", "foo"]
+    rule = data["policy"]["security_rules"][0]
+    assert rule["name"] == "allow_"
+    assert rule["source"] == ["grp_"]
+    assert rule["destination"] == ["foo_"]
+    assert _name_warnings(data) == []
+
+
+def test_default_is_no_normalization_when_param_omitted():
+    data = build_export(
+        ET.fromstring("<config version='11.1.0'/>"),
+        ET.fromstring(f"<vsys>{DEFAULT_VSYS}</vsys>"),
+        None,
+        ET.fromstring("<network></network>"),
+        "fixture.xml",
+        "vsys1",
+    )
+    assert [a["name"] for a in data["objects"]["addresses"]] == ["foo", "foo_"]
+    assert _name_warnings(data) == []
+
+
+def test_cli_normalize_names_flag_defaults_false(monkeypatch):
+    import panparser
+
+    monkeypatch.setattr("sys.argv", ["panparser", "cfg.xml"])
+    assert panparser.parse_args().normalize_names is False
+    monkeypatch.setattr("sys.argv", ["panparser", "cfg.xml", "--normalize-names"])
+    assert panparser.parse_args().normalize_names is True
+
+
+def test_opt_in_collision_still_guarded_with_warning():
+    data = _export(DEFAULT_VSYS, normalize_names=True)
+    names = sorted(a["name"] for a in data["objects"]["addresses"])
+    assert names == ["foo", "foo_"]  # collision guard keeps both
+    warns = [w for w in _name_warnings(data) if w["severity"] == "warn"]
+    assert len(warns) == 1 and "foo_" in warns[0]["message"]
+    assert data["objects"]["address_groups"][0]["name"] == "grp"

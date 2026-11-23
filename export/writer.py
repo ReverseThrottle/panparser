@@ -81,7 +81,13 @@ from export.objects import (
 
 
 def _normalize_name(name: str) -> str:
-    """Strip trailing underscores from object names — SCM rejects them."""
+    """Strip trailing underscores from an object name.
+
+    Opt-in only (``build_export(normalize_names=True)`` / ``--normalize-names``),
+    for tenants or workflows that want trailing underscores removed. Not applied
+    by default: SCM accepts trailing underscores, and in source configs they can
+    deliberately distinguish otherwise-duplicate names.
+    """
     return name.rstrip("_")
 
 
@@ -233,8 +239,14 @@ def build_export(
     network_root: Element | None,
     source_file: str,
     vsys: str,
+    normalize_names: bool = False,
 ) -> dict:
-    """Assemble the full export dict from all getter functions."""
+    """Assemble the full export dict from all getter functions.
+
+    Object names are preserved exactly as in the source config. With
+    ``normalize_names=True``, trailing underscores are stripped from named
+    objects and references are rewritten export-wide (see #93).
+    """
     virtual_routers = get_virtual_routers_export(network_root)
 
     # Collect all migration warnings from VR notes
@@ -865,12 +877,15 @@ def build_export(
     if botnet_report:
         data["shared"] = {"botnet_report": botnet_report}
 
-    # Trailing-underscore normalization (#93): every named object in every
+    # Trailing-underscore normalization (#93), opt-in via normalize_names: every named object in every
     # exported collection participates, and references are rewritten
     # export-wide. Warnings must be appended BEFORE _apply_renames, which
     # rebuilds every list/dict — appending to `warnings` afterwards would
     # orphan them from the returned data.
-    rename_map, skipped = _build_rename_map(list(_iter_named_objects(data)))
+    rename_map: dict[str, str] = {}
+    skipped: list[str] = []
+    if normalize_names:
+        rename_map, skipped = _build_rename_map(list(_iter_named_objects(data)))
     if rename_map:
         warnings.append({
             "severity": "info",
