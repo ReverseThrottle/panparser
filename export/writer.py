@@ -859,17 +859,19 @@ def build_export(
             vulnerability_protection_profiles, url_access_profiles,
             file_blocking_profiles, dns_security_profiles,
         )
-        warnings.append({
-            "severity": "warn",
-            "object_path": "meta/device_group",
-            "message": (
-                f"--no-ancestors: {_n_unresolved} reference(s) (address-group "
-                "members, service-group members, profile-group profiles) do "
-                "not resolve to any object in the exported scope (group "
-                "itself + shared); they probably point at parent device "
-                "groups. Predefined services/profiles are not counted."
-            ),
-        })
+        if _n_unresolved:
+            warnings.append({
+                "severity": "warn",
+                "object_path": "meta/device_group",
+                "message": (
+                    f"--no-ancestors: {_n_unresolved} reference(s) (address-group "
+                    "members, service-group members, profile-group profiles) do "
+                    "not resolve to any object in the exported scope (group "
+                    "itself + shared, unless --no-shared is also given); they "
+                    "probably point at parent device groups. Predefined "
+                    "services/profiles are not counted."
+                ),
+            })
 
     data = {
         "meta": {

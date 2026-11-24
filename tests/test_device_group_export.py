@@ -415,11 +415,30 @@ def test_no_ancestors_own_objects_and_unresolved_warning(monkeypatch, tmp_path):
     assert len(warn) == 1
     # ag -> mid-a unresolved (1); pg spyware 'leaf-spy' has no spyware profile (1)
     assert warn[0]["message"].startswith("--no-ancestors: 2 reference(s)")
+    assert "unless --no-shared is also given" in warn[0]["message"]
 
 
 def test_default_includes_ancestors_no_unresolved_warning(monkeypatch, tmp_path):
     data = _hier_export(monkeypatch, tmp_path, "--device-group", "Leaf")
     assert not any("--no-ancestors" in w["message"] for w in data["migration_warnings"])
+
+
+def test_no_ancestors_zero_unresolved_no_warning(monkeypatch, tmp_path, config_path):
+    # Solo has no address-group/service-group/profile-group of its own, so
+    # --no-ancestors has nothing to flag as unresolved (issue #134).
+    data = _export(monkeypatch, tmp_path, config_path, "--device-group", "Solo", "--no-ancestors")
+    assert not any("--no-ancestors" in w["message"] for w in data["migration_warnings"])
+
+
+def test_no_ancestors_no_shared_message_scopes_shared_correctly(monkeypatch, tmp_path):
+    data = _hier_export(monkeypatch, tmp_path, "--device-group", "Leaf",
+                        "--no-ancestors", "--no-shared")
+    warn = [w for w in data["migration_warnings"]
+            if w["severity"] == "warn" and "--no-ancestors" in w["message"]]
+    assert len(warn) == 1
+    # Message must not unconditionally claim shared is in scope.
+    assert "(group itself + shared);" not in warn[0]["message"]
+    assert "unless --no-shared is also given" in warn[0]["message"]
 
 
 def test_resolving_twice_leaves_source_tree_unchanged():
