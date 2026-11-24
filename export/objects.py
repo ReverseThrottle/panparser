@@ -3241,7 +3241,7 @@ def export_radius_server_profiles(vsys_root, shared_root=None) -> list[dict]:
                 port = 1812
             servers.append({
                 "name": srv_name,
-                "ip_address": srv.findtext("server") or "",
+                "ip_address": srv.findtext("ip-address") or "",
                 "port": port,
                 "secret": "MIGRATION-PLACEHOLDER-SECRET",
             })
@@ -3308,7 +3308,7 @@ def export_ldap_server_profiles(vsys_root, shared_root=None) -> list[dict]:
                 port = 389
             servers.append({
                 "name": srv_name,
-                "address": srv.findtext("server") or "",
+                "address": srv.findtext("address") or "",
                 "port": port,
             })
         d: dict = {"name": name}
@@ -3796,7 +3796,7 @@ def export_tacacs_server_profiles(vsys_root, shared_root=None) -> list[dict]:
                 port = 49
             servers.append({
                 "name": srv_name,
-                "address": srv.findtext("server") or "",
+                "address": srv.findtext("address") or "",
                 "port": port,
                 "secret": "MIGRATION-PLACEHOLDER-SECRET",
             })

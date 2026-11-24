@@ -148,8 +148,8 @@ tests/viewer_harness.py expectations.
           <bind-dn>cn=svc-ldap,dc=example,dc=local</bind-dn>
           <bind-password>FAKE-TEST-SECRET-DO-NOT-USE</bind-password>
           <server>
-            <entry name="dc1"><server>10.0.0.10</server></entry>
-            <entry name="dc2"><server>10.0.0.11</server></entry>
+            <entry name="dc1"><address>10.0.0.10</address></entry>
+            <entry name="dc2"><address>10.0.0.11</address></entry>
           </server>
         </entry>
         <entry name="ldap-nobase">
@@ -160,7 +160,7 @@ tests/viewer_harness.py expectations.
         <entry name="radius-main">
           <protocol><CHAP/></protocol>
           <server>
-            <entry name="r1"><server>10.0.0.20</server><secret>FAKE-TEST-SECRET-DO-NOT-USE</secret></entry>
+            <entry name="r1"><ip-address>10.0.0.20</ip-address><secret>FAKE-TEST-SECRET-DO-NOT-USE</secret></entry>
           </server>
         </entry>
       </radius>
@@ -418,7 +418,7 @@ tests/viewer_harness.py expectations.
               <entry name="radius-vsys">
                 <protocol><PAP/></protocol>
                 <server>
-                  <entry name="r-vsys"><server>10.1.0.20</server><secret>FAKE-TEST-SECRET-DO-NOT-USE</secret></entry>
+                  <entry name="r-vsys"><ip-address>10.1.0.20</ip-address><secret>FAKE-TEST-SECRET-DO-NOT-USE</secret></entry>
                 </server>
               </entry>
             </radius>

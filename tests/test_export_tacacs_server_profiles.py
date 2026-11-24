@@ -33,12 +33,12 @@ class TestExportTacacsServerProfiles:
         <entry name="corp-tacacs">
           <server>
             <entry name="tac-1">
-              <server>10.10.10.5</server>
+              <address>10.10.10.5</address>
               <port>4949</port>
               <secret>{FAKE_SECRET_MARKER}</secret>
             </entry>
-            <entry name="tac-2"><server>10.10.10.6</server></entry>
-            <entry name="tac-bad"><server>10.10.10.7</server><port>not-a-port</port></entry>
+            <entry name="tac-2"><address>10.10.10.6</address></entry>
+            <entry name="tac-bad"><address>10.10.10.7</address><port>not-a-port</port></entry>
           </server>
           <protocol>chap</protocol>
           <timeout>5</timeout>
@@ -86,3 +86,14 @@ class TestExportTacacsServerProfiles:
     def test_sorted_case_insensitive(self):
         root = vsys_root(_profiles('<entry name="Z-tacacs"/><entry name="a-tacacs"/>'))
         assert [p["name"] for p in export_tacacs_server_profiles(root)] == ["a-tacacs", "Z-tacacs"]
+
+
+def test_regression_address_read_from_address_child():
+    """Real PAN-OS stores the TACACS+ server host in <address>, not <server>."""
+    root = vsys_root(_profiles("""
+    <entry name="T"><server>
+      <entry name="t1"><address>10.0.0.7</address><port>49</port><secret>-AQ==DUMMY</secret></entry>
+    </server></entry>
+    """))
+    srv = export_tacacs_server_profiles(root)[0]["server"][0]
+    assert srv["address"] == "10.0.0.7"

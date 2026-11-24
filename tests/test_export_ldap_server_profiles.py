@@ -32,9 +32,9 @@ class TestExportLdapServerProfiles:
         root = vsys_root(_profiles(f"""
         <entry name="corp-ldap">
           <server>
-            <entry name="dc-1"><server>10.10.10.5</server><port>636</port></entry>
-            <entry name="dc-2"><server>10.10.10.6</server></entry>
-            <entry name="dc-bad"><server>10.10.10.7</server><port>not-a-port</port></entry>
+            <entry name="dc-1"><address>10.10.10.5</address><port>636</port></entry>
+            <entry name="dc-2"><address>10.10.10.6</address></entry>
+            <entry name="dc-bad"><address>10.10.10.7</address><port>not-a-port</port></entry>
           </server>
           <base>dc=example,dc=com</base>
           <bind-dn>cn=svc-ldap,dc=example,dc=com</bind-dn>
@@ -100,3 +100,15 @@ class TestExportLdapServerProfiles:
     def test_sorted_case_insensitive(self):
         root = vsys_root(_profiles('<entry name="Z-ldap"/><entry name="a-ldap"/>'))
         assert [p["name"] for p in export_ldap_server_profiles(root)] == ["a-ldap", "Z-ldap"]
+
+
+def test_regression_address_read_from_address_child():
+    """Real PAN-OS stores the LDAP server host in <address>, not <server>."""
+    import xml.etree.ElementTree as ET
+    from export.objects import export_ldap_server_profiles
+    root = ET.fromstring(
+        '<vsys><server-profile><ldap><entry name="L"><server>'
+        '<entry name="dc"><address>10.0.0.5</address><port>389</port></entry>'
+        '</server></entry></ldap></server-profile></vsys>')
+    assert export_ldap_server_profiles(root)[0]["server"] == [
+        {"name": "dc", "address": "10.0.0.5", "port": 389}]
