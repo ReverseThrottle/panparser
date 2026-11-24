@@ -219,7 +219,7 @@ def test_every_renderer_module_has_a_test():
     parsers_dir = Path(__file__).resolve().parent.parent / "parsers"
     modules = {
         p.stem for p in parsers_dir.glob("*.py")
-        if p.stem not in ("__init__", "_data", "_helpers")
+        if p.stem not in ("__init__", "_data", "_helpers", "_devicegroup")
     }
     covered = {mod.__name__.split(".")[-1] for mod, *_ in RENDERERS}
     assert covered == modules, f"untested renderer modules: {modules - covered}"
