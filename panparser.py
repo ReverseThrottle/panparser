@@ -13,6 +13,7 @@ from rich.panel import Panel
 from rich.rule import Rule
 from rich import box
 
+from parsers._devicegroup import DeviceGroupNotFoundError, resolve_device_group
 from parsers.addresses import render_addresses, render_address_groups
 from parsers.services import render_services, render_service_groups
 from parsers.security import render_security_rules
@@ -107,8 +108,19 @@ def parse_args() -> argparse.Namespace:
         help="Section(s) to display (default: all). May be specified multiple times.",
     )
     parser.add_argument(
-        "--vsys", default="vsys1",
+        "--vsys", default=None,
         help="Target vsys name (default: vsys1)",
+    )
+    parser.add_argument(
+        "--device-group", metavar="NAME", default=None,
+        help="Panorama device group to use as the object root instead of a "
+             "vsys (objects only; merges parent device groups and shared). "
+             "Cannot be combined with --vsys.",
+    )
+    parser.add_argument(
+        "--no-ancestors", action="store_true",
+        help="With --device-group: export only the named group's own objects "
+             "(plus shared unless --no-shared), not its parent groups'.",
     )
     parser.add_argument(
         "-g", "--grep",
@@ -137,7 +149,15 @@ def parse_args() -> argparse.Namespace:
         help="With --output: strip trailing underscores from object names and "
              "rewrite references (default: names are preserved exactly).",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.device_group is not None and args.vsys is not None:
+        parser.error("--device-group and --vsys are mutually exclusive "
+                     "(a device group replaces the vsys as the object root).")
+    if args.no_ancestors and args.device_group is None:
+        parser.error("--no-ancestors requires --device-group.")
+    if args.vsys is None:
+        args.vsys = "vsys1"
+    return args
 
 
 def load_config(path: str) -> Element:
@@ -172,8 +192,22 @@ class VsysNotFoundError(Exception):
         )
 
 
+def _unwrap_config(root: Element) -> Element:
+    # Some API responses wrap the config in <response><result><config>
+    if root.tag == "response":
+        result = root.find("result")
+        if result is not None:
+            config = result.find("config")
+            if config is not None:
+                return config
+    return root
+
+
 def find_roots(root: Element, vsys_name: str, include_shared: bool):
     """Return (vsys_root, shared_root, network_root) from the config root.
+
+    Firewall (vsys) scope only; Panorama device groups are resolved by
+    parsers._devicegroup.resolve_device_group (see main()).
 
     Handles both running-config and 'show config all' formats, as well as
     configs that use a <response> wrapper from the API.
@@ -181,13 +215,7 @@ def find_roots(root: Element, vsys_name: str, include_shared: bool):
     Raises VsysNotFoundError if a vsys container exists but has no entry
     named vsys_name. An absent or empty vsys container yields vsys_root=None.
     """
-    # Some API responses wrap the config in <response><result><config>
-    if root.tag == "response":
-        result = root.find("result")
-        if result is not None:
-            config = result.find("config")
-            if config is not None:
-                root = config
+    root = _unwrap_config(root)
 
     # Find the device entry — try the standard path first
     device_entry = root.find("devices/entry")
@@ -249,11 +277,23 @@ def main() -> None:
         )
 
     root = load_config(args.config)
+    device_scope = None
     try:
-        vsys_root, shared_root, network_root = find_roots(
-            root, args.vsys, include_shared=not args.no_shared
-        )
-    except VsysNotFoundError as e:
+        if args.device_group is not None:
+            config = _unwrap_config(root)
+            shared = None if args.no_shared else config.find("shared")
+            device_scope = resolve_device_group(
+                config, args.device_group, shared,
+                include_ancestors=not args.no_ancestors,
+            )
+            vsys_root, shared_root, network_root = device_scope.root, None, None
+            for w in device_scope.warnings:
+                print(f"Warning: {w}", file=sys.stderr)
+        else:
+            vsys_root, shared_root, network_root = find_roots(
+                root, args.vsys, include_shared=not args.no_shared
+            )
+    except (VsysNotFoundError, DeviceGroupNotFoundError) as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
@@ -277,6 +317,7 @@ def main() -> None:
             root, vsys_root, shared_root, network_root,
             source_file=args.config, vsys=args.vsys,
             normalize_names=args.normalize_names,
+            device_group=device_scope,
         )
         try:
             write_export(data, args.output)
@@ -302,8 +343,10 @@ def main() -> None:
 
     console.print(Panel(
         f"[bold]PAN-OS Config:[/bold] {args.config}\n"
-        f"[dim]vsys:[/dim] {args.vsys}  |  "
-        f"[dim]shared:[/dim] {'yes' if shared_root is not None else 'no'}  |  "
+        + (f"[dim]device group:[/dim] {args.device_group} "
+           f"(objects only; chain: {' > '.join(device_scope.chain)})  |  "
+           if device_scope else f"[dim]vsys:[/dim] {args.vsys}  |  ")
+        + f"[dim]shared:[/dim] {'yes' if (shared_root is not None or (device_scope and not args.no_shared)) else 'no'}  |  "
         f"[dim]format:[/dim] {'full (show config all)' if is_full_config else 'running-config'}"
         + (f"  |  [dim]grep:[/dim] {grep}" if grep else ""),
         box=box.ROUNDED, style="bold blue",

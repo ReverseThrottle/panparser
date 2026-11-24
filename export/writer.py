@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from xml.etree.ElementTree import Element
 
 from parsers._data import get_virtual_routers_export
+from parsers._devicegroup import DeviceGroupScope
 from export.objects import (
     export_tags,
     export_addresses,
@@ -232,6 +233,39 @@ def _reconcile_interface_members(
     return warnings
 
 
+_PREDEFINED_SERVICES = frozenset({"service-http", "service-https"})
+_PREDEFINED_PROFILES = frozenset({"default", "strict"})
+
+
+def _count_unresolved_refs(addresses, address_groups, services, service_groups,
+                           profile_groups, spyware, wildfire, vuln, url,
+                           file_blocking, dns) -> int:
+    """Count group/profile-group references with no target in the export."""
+    def names(items):
+        return {i["name"] for i in items}
+
+    addr_names = names(addresses) | names(address_groups)
+    svc_names = names(services) | names(service_groups) | _PREDEFINED_SERVICES
+    n = 0
+    for g in address_groups:
+        n += sum(1 for m in g.get("static", []) if m not in addr_names)
+    for g in service_groups:
+        n += sum(1 for m in g.get("members", []) if m not in svc_names)
+    by_field = {
+        "spyware": names(spyware),
+        "virus_and_wildfire_analysis": names(wildfire),
+        "vulnerability": names(vuln),
+        "url_filtering": names(url),
+        "file_blocking": names(file_blocking),
+        "dns_security": names(dns),
+    }
+    for g in profile_groups:
+        for field, known in by_field.items():
+            n += sum(1 for m in g.get(field, [])
+                     if m not in known and m not in _PREDEFINED_PROFILES)
+    return n
+
+
 def build_export(
     root: Element,
     vsys_root: Element | None,
@@ -240,13 +274,23 @@ def build_export(
     source_file: str,
     vsys: str,
     normalize_names: bool = False,
+    device_group: DeviceGroupScope | None = None,
 ) -> dict:
     """Assemble the full export dict from all getter functions.
 
     Object names are preserved exactly as in the source config. With
     ``normalize_names=True``, trailing underscores are stripped from named
     objects and references are rewritten export-wide (see #93).
+
+    ``device_group`` (a parsers._devicegroup.DeviceGroupScope) switches to
+    Panorama device-group mode: ``vsys_root`` is the merged device-group
+    object root, and only object collections are populated. Policy, zones,
+    network, device setup and HA stay present but empty.
     """
+    dg = device_group is not None
+    if dg:
+        network_root = None
+        shared_root = None
     virtual_routers = get_virtual_routers_export(network_root)
 
     # Collect all migration warnings from VR notes
@@ -271,14 +315,16 @@ def build_export(
     application_groups = export_application_groups(vsys_root, shared_root)
     url_categories     = [c for c in export_url_categories(vsys_root, shared_root)
                           if c.get("list")]   # skip empty URL lists — invalid in SCM
-    zones              = export_zones(vsys_root)
-    gp_portals         = export_gp_portals(vsys_root)
-    security_rules     = export_security_rules(vsys_root)
-    nat_rules          = export_nat_rules(vsys_root)
-    decryption_rules   = export_decryption_rules(vsys_root)
-    authentication_rules = export_authentication_rules(vsys_root)
-    pbf_rules          = export_pbf_rules(vsys_root)
-    qos_rules          = export_qos_rules(vsys_root)
+    # Device-group mode is objects-only: rulebases live under pre/post-rulebase
+    # (not rulebase) and zones/GP are template/firewall scoped.
+    zones              = [] if dg else export_zones(vsys_root)
+    gp_portals         = [] if dg else export_gp_portals(vsys_root)
+    security_rules     = [] if dg else export_security_rules(vsys_root)
+    nat_rules          = [] if dg else export_nat_rules(vsys_root)
+    decryption_rules   = [] if dg else export_decryption_rules(vsys_root)
+    authentication_rules = [] if dg else export_authentication_rules(vsys_root)
+    pbf_rules          = [] if dg else export_pbf_rules(vsys_root)
+    qos_rules          = [] if dg else export_qos_rules(vsys_root)
 
     ike_crypto_profiles   = export_ike_crypto_profiles(network_root)
     gp_app_crypto_profiles = export_gp_app_crypto_profiles(network_root)
@@ -378,7 +424,7 @@ def build_export(
     file_blocking_profiles          = export_file_blocking_profiles(vsys_root, shared_root)
     zone_protection_profiles        = export_zone_protection_profiles(network_root)
     dos_protection_profiles         = export_dos_protection_profiles(vsys_root, shared_root)
-    dos_protection_rules            = export_dos_protection_rules(vsys_root)
+    dos_protection_rules            = [] if dg else export_dos_protection_rules(vsys_root)
 
     # Surface profile content SCM cannot represent (issue #67) the same way
     # virtual-router notes are surfaced above.
@@ -414,14 +460,16 @@ def build_export(
     kerberos_server_profiles = export_kerberos_server_profiles(vsys_root, shared_root)
     saml_server_profiles     = export_saml_server_profiles(vsys_root, shared_root)
     tacacs_server_profiles   = export_tacacs_server_profiles(vsys_root, shared_root)
-    gp_gateways              = export_gp_gateways(vsys_root)
+    gp_gateways              = [] if dg else export_gp_gateways(vsys_root)
     ssl_profiles             = export_ssl_profiles(shared_root)
 
     # Device Setup — device-scoped, requires serial at push time
-    mgmt_interface, service_settings, service_routes = export_device_setup(root)
+    mgmt_interface, service_settings, service_routes = (
+        ({}, {}, []) if dg else export_device_setup(root)
+    )
 
     # High Availability — device-scoped, no SCM push path for HA pairing
-    high_availability = export_high_availability(root)
+    high_availability = {} if dg else export_high_availability(root)
 
     # Botnet/C2 traffic report config — reporting/analytics, not pushable to SCM
     botnet_report = export_botnet_report(shared_root)
@@ -776,6 +824,53 @@ def build_export(
             "message": note,
         })
 
+    if dg:
+        for _msg in device_group.warnings:
+            warnings.append({
+                "severity": "warn",
+                "object_path": "meta/device_group",
+                "message": _msg,
+            })
+        warnings.append({
+            "severity": "info",
+            "object_path": "meta/device_group",
+            "message": (
+                f"Device-group export of '{device_group.name}' is objects-only "
+                f"(objects merged from: {' > '.join(device_group.chain)} > shared, "
+                "nearest group wins). Policy rules (pre/post-rulebase), zones, "
+                "network and device setup are not exported and the corresponding "
+                "sections are empty."
+            ),
+        })
+
+    if dg and device_group.unexported:
+        warnings.append({
+            "severity": "info",
+            "object_path": "meta/device_group",
+            "message": (
+                "Containers present in the device group but not exported: "
+                + ", ".join(device_group.unexported) + "."
+            ),
+        })
+    if dg and not device_group.include_ancestors:
+        _n_unresolved = _count_unresolved_refs(
+            addresses, address_groups, services, service_groups, profile_groups,
+            anti_spyware_profiles, wildfire_antivirus_profiles,
+            vulnerability_protection_profiles, url_access_profiles,
+            file_blocking_profiles, dns_security_profiles,
+        )
+        warnings.append({
+            "severity": "warn",
+            "object_path": "meta/device_group",
+            "message": (
+                f"--no-ancestors: {_n_unresolved} reference(s) (address-group "
+                "members, service-group members, profile-group profiles) do "
+                "not resolve to any object in the exported scope (group "
+                "itself + shared); they probably point at parent device "
+                "groups. Predefined services/profiles are not counted."
+            ),
+        })
+
     data = {
         "meta": {
             "schema_version": "1.2",
@@ -783,7 +878,9 @@ def build_export(
             "exported_at": datetime.now(timezone.utc).isoformat(),
             "hostname": hostname,
             "sw_version": sw_version,
-            "vsys": vsys,
+            "vsys": None if dg else vsys,
+            **({"device_group": device_group.name,
+                "device_group_chain": device_group.chain} if dg else {}),
         },
         "migration_warnings": warnings,
         "network": {
@@ -934,6 +1031,13 @@ def write_export(data: dict, output_path: str) -> None:
         f"[{meta.get('hostname', '?')}  PAN-OS {meta.get('sw_version', '?')}]",
         file=sys.stderr,
     )
+    if meta.get("device_group"):
+        print(
+            f"  scope   : device group {meta['device_group']} "
+            f"(merged: {' > '.join(meta.get('device_group_chain', []))} > shared)  "
+            "OBJECTS ONLY",
+            file=sys.stderr,
+        )
     net = data.get("network", {})
     ifaces = net.get("interfaces", {})
     print(

@@ -156,7 +156,33 @@ python3 -m panparser running-config.xml --output ~/exports/fw1.json --vsys vsys2
 
 # Strip trailing underscores from object names (opt-in)
 python3 -m panparser running-config.xml --output ~/exports/fw1.json --normalize-names
+
+# Panorama: export a device group's objects (see "Device-group export" below)
+python3 -m panparser panorama.xml --output ~/exports/dg.json --device-group Fairbanks
 ```
+
+### Device-group export (Panorama)
+
+`--device-group NAME` uses a Panorama device group as the object root in place of a vsys
+(also works with the viewer CLI). It is **objects only**:
+
+- Exported: tags, addresses, address groups, services, service groups, application groups,
+  profile groups, security profiles (including DoS protection profiles), log forwarding
+  profiles, custom applications/filters, URL categories, schedules and EDLs defined in the device group, its ancestors, and `<shared>` (`--no-shared` skips shared).
+- Hierarchy is honored via `parent-dg` (inline or under `<readonly>`): nearest group wins, then
+  ancestors, then shared; a name defined at several levels appears once. An unknown or cyclic
+  parent is not fatal; it stops the chain and adds a `migration_warnings` entry.
+- `--no-ancestors` exports only the named group's own objects (plus shared unless `--no-shared`);
+  a WARN `migration_warnings` entry counts address-group, service-group and profile-group
+  references that no longer resolve within that scope.
+- Other containers present in the group (e.g. `dynamic-user-group`, `region`) are not exported;
+  an INFO `migration_warnings` entry lists them.
+- If inline `parent-dg` and `<readonly>` disagree, `<readonly>` wins and a warning is added.
+- Not exported (keys still present, empty): policy rules (`pre-rulebase`/`post-rulebase`), zones,
+  network, device setup, HA, certificates, GlobalProtect. An INFO `migration_warnings` entry says so.
+- `meta.device_group` / `meta.device_group_chain` record the scope; `meta.vsys` is `null`.
+- Mutually exclusive with `--vsys` (argparse error, exit 2). An unknown group is an error listing the
+  available device-group names. The TUI does not support device groups.
 
 **Object names are preserved exactly as they appear in the source config**, including trailing
 underscores (SCM accepts them; in many configs `foo` and `foo_` are deliberately distinct objects).
@@ -315,6 +341,7 @@ panparser/
 │   ├── __init__.py
 │   ├── _data.py          # Pure data extraction (getters) for the TUI
 │   ├── _helpers.py       # Shared XML utilities (get_members, iter_entries, etc.)
+│   ├── _devicegroup.py   # Panorama device-group scope resolution (--device-group)
 │   ├── addresses.py
 │   ├── app_override.py
 │   ├── applications.py
