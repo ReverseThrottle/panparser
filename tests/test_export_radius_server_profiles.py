@@ -40,12 +40,12 @@ class TestExportRadiusServerProfiles:
         <entry name="corp-radius">
           <server>
             <entry name="radius-1">
-              <server>10.10.10.5</server>
+              <ip-address>10.10.10.5</ip-address>
               <port>1812</port>
               <secret>{FAKE_SECRET_MARKER}</secret>
             </entry>
             <entry name="radius-2">
-              <server>10.10.10.6</server>
+              <ip-address>10.10.10.6</ip-address>
               <secret>{FAKE_SECRET_MARKER}</secret>
             </entry>
           </server>
@@ -73,9 +73,9 @@ class TestExportRadiusServerProfiles:
         xml = _profiles("""
         <entry name="port-cases">
           <server>
-            <entry name="custom-port"><server>10.0.0.1</server><port>1645</port></entry>
-            <entry name="bad-port"><server>10.0.0.2</server><port>not-a-port</port></entry>
-            <entry name="no-port"><server>10.0.0.3</server></entry>
+            <entry name="custom-port"><ip-address>10.0.0.1</ip-address><port>1645</port></entry>
+            <entry name="bad-port"><ip-address>10.0.0.2</ip-address><port>not-a-port</port></entry>
+            <entry name="no-port"><ip-address>10.0.0.3</ip-address></entry>
           </server>
         </entry>
         """)
@@ -130,3 +130,24 @@ class TestExportRadiusServerProfiles:
         """)
         out = export_radius_server_profiles(_vsys(xml))
         assert [p["name"] for p in out] == ["a-profile", "Z-profile"]
+
+
+def test_regression_ip_read_from_ip_address_child():
+    """Real PAN-OS stores the RADIUS server IP in <ip-address>, not <server>."""
+    xml = _profiles("""
+    <entry name="T">
+      <server>
+        <entry name="a">
+          <secret>-AQ==DUMMY-ENCRYPTED</secret>
+          <port>1812</port>
+          <ip-address>10.0.0.1</ip-address>
+        </entry>
+      </server>
+      <protocol><PAP/></protocol>
+    </entry>
+    """)
+    out = export_radius_server_profiles(_vsys(xml))
+    assert out[0]["server"] == [
+        {"name": "a", "ip_address": "10.0.0.1", "port": 1812, "secret": PLACEHOLDER_SECRET}
+    ]
+    assert "DUMMY-ENCRYPTED" not in json.dumps(out)
