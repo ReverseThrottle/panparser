@@ -281,6 +281,11 @@ def main() -> None:
             "Warning: --normalize-names only applies with --output; ignoring.",
             file=sys.stderr,
         )
+    if args.allow_name_collisions and not args.normalize_names:
+        print(
+            "Warning: --allow-name-collisions only applies with --normalize-names; ignoring.",
+            file=sys.stderr,
+        )
 
     root = load_config(args.config)
     device_scope = None
@@ -305,7 +310,7 @@ def main() -> None:
 
     # --output: write JSON export and exit; do not start the display pipeline
     if args.output:
-        from export.writer import build_export, write_export
+        from export.writer import NameCollisionError, build_export, write_export
         # Overwrite guard applies to existing files only. A directory is never
         # overwriteable, so don't advise --force for it — let write_export raise
         # IsADirectoryError, caught below as a clean boundary error (issue #99).
@@ -319,7 +324,6 @@ def main() -> None:
                 file=sys.stderr,
             )
             sys.exit(1)
-        from export.writer import NameCollisionError
         try:
             data = build_export(
                 root, vsys_root, shared_root, network_root,

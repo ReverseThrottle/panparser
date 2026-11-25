@@ -43,7 +43,7 @@ def _export(
     vsys_xml: str = "",
     network_xml: str = "",
     normalize_names: bool = True,
-    allow_name_collisions: bool = True,
+    allow_name_collisions: bool = False,
 ) -> dict:
     return build_export(
         ET.fromstring("<config version='11.1.0'/>"),
@@ -338,7 +338,7 @@ COLLISION_VSYS = """
 
 
 def test_e2e_collision_keeps_original_name_and_warns():
-    data = _export(COLLISION_VSYS)
+    data = _export(COLLISION_VSYS, allow_name_collisions=True)
 
     names = [a["name"] for a in data["objects"]["addresses"]]
     assert sorted(names) == ["foo", "foo_", "ok"]  # no duplicate 'foo'
@@ -362,7 +362,7 @@ def test_e2e_ambiguous_double_underscore_collision_warns():
       <entry name="foo__"><ip-netmask>10.0.0.2/32</ip-netmask></entry>
     </address>
     """
-    data = _export(vsys)
+    data = _export(vsys, allow_name_collisions=True)
     names = sorted(a["name"] for a in data["objects"]["addresses"])
     assert names == ["foo_", "foo__"]  # neither silently wins
     warns = [w for w in _name_warnings(data) if w["severity"] == "warn"]
@@ -452,7 +452,7 @@ def test_cli_normalize_names_flag_defaults_false(monkeypatch):
 
 
 def test_opt_in_collision_still_guarded_with_warning():
-    data = _export(DEFAULT_VSYS, normalize_names=True)
+    data = _export(DEFAULT_VSYS, normalize_names=True, allow_name_collisions=True)
     names = sorted(a["name"] for a in data["objects"]["addresses"])
     assert names == ["foo", "foo_"]  # collision guard keeps both
     warns = [w for w in _name_warnings(data) if w["severity"] == "warn"]
@@ -578,7 +578,7 @@ def test_normalize_collision_raises_by_default_and_lists_every_group():
 
 
 def test_normalize_collision_allowed_keeps_names_and_warns():
-    data = _export(VENDOR_VSYS)
+    data = _export(VENDOR_VSYS, allow_name_collisions=True)
     names = sorted(a["name"] for a in data["objects"]["addresses"])
     assert names == ["Vendor_eXploranceBlue_", "clean"]
     assert data["objects"]["address_groups"][0]["static"] == ["Vendor_eXploranceBlue_"]
@@ -647,3 +647,28 @@ def test_main_allow_name_collisions_succeeds(monkeypatch, tmp_path):
         panparser.main()
     assert exc.value.code == 0
     assert out.exists()
+
+
+def test_main_warns_allow_name_collisions_without_normalize_names(
+    monkeypatch, tmp_path, capsys
+):
+    import panparser
+
+    cfg = tmp_path / "c.xml"
+    cfg.write_text(
+        "<config version='11.1.0'><devices><entry name='localhost.localdomain'>"
+        "<vsys><entry name='vsys1'>" + VENDOR_VSYS + "</entry></vsys></entry></devices></config>",
+        encoding="utf-8",
+    )
+    out = tmp_path / "o.json"
+    monkeypatch.setattr(
+        "sys.argv",
+        ["panparser", str(cfg), "--output", str(out), "--allow-name-collisions"],
+    )
+    with pytest.raises(SystemExit) as exc:
+        panparser.main()
+    assert exc.value.code == 0
+    assert (
+        "Warning: --allow-name-collisions only applies with --normalize-names; ignoring."
+        in capsys.readouterr().err
+    )
