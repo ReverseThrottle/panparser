@@ -40,7 +40,10 @@ from export.writer import (
 
 
 def _export(
-    vsys_xml: str = "", network_xml: str = "", normalize_names: bool = True
+    vsys_xml: str = "",
+    network_xml: str = "",
+    normalize_names: bool = True,
+    allow_name_collisions: bool = True,
 ) -> dict:
     return build_export(
         ET.fromstring("<config version='11.1.0'/>"),
@@ -50,6 +53,7 @@ def _export(
         "fixture.xml",
         "vsys1",
         normalize_names=normalize_names,
+        allow_name_collisions=allow_name_collisions,
     )
 
 
@@ -505,3 +509,141 @@ def test_main_warns_when_normalize_names_without_output(
     )
     panparser.main()  # display mode returns normally
     assert "--normalize-names only applies with --output" in capsys.readouterr().err
+
+
+# --------------------------------------------------------------------------
+# Collision guard: --normalize-names fails loudly by default
+# --------------------------------------------------------------------------
+
+from export.writer import NameCollisionError, _find_name_collisions  # noqa: E402
+
+# Mirrors the Fairbanks case: address 'Vendor_eXploranceBlue_' and a group
+# named 'Vendor_eXploranceBlue' share one SCM namespace once stripped.
+VENDOR_VSYS = """
+<address>
+  <entry name="Vendor_eXploranceBlue_"><ip-netmask>10.0.0.1/32</ip-netmask></entry>
+  <entry name="clean_"><ip-netmask>10.0.0.2/32</ip-netmask></entry>
+</address>
+<address-group>
+  <entry name="Vendor_eXploranceBlue"><static><member>Vendor_eXploranceBlue_</member></static></entry>
+</address-group>
+"""
+
+
+def test_find_name_collisions_groups_sources_with_paths():
+    pairs = [
+        ("objects/addresses", {"name": "foo_"}),
+        ("objects/addresses", {"name": "foo"}),
+        ("objects/address_groups", {"name": "foo"}),  # same source name: not a collision itself
+        ("objects/addresses", {"name": "ok_"}),
+        ("objects/addresses", {"name": "bar__"}),
+        ("objects/addresses", {"name": "bar_"}),
+    ]
+    found = _find_name_collisions(pairs)
+    assert sorted(found) == ["bar", "foo"]
+    assert sorted(found["foo"]) == [
+        ("foo", "objects/address_groups"),
+        ("foo", "objects/addresses"),
+        ("foo_", "objects/addresses"),
+    ]
+    assert sorted(n for n, _ in found["bar"]) == ["bar_", "bar__"]
+
+
+def test_find_name_collisions_reports_empty_target():
+    found = _find_name_collisions([("zones", {"name": "__"})])
+    assert found == {"": [("__", "zones")]}
+
+
+def test_find_name_collisions_none():
+    assert _find_name_collisions([("objects/addresses", {"name": "a_"})]) == {}
+    assert _find_name_collisions([("objects/addresses", {"name": "a"}),
+                                  ("objects/addresses", {"name": "a"})]) == {}
+
+
+def test_normalize_collision_raises_by_default_and_lists_every_group():
+    vsys = VENDOR_VSYS + """
+<service>
+  <entry name="svc_"><protocol><tcp><port>1</port></tcp></protocol></entry>
+  <entry name="svc"><protocol><tcp><port>2</port></tcp></protocol></entry>
+</service>
+"""
+    with pytest.raises(NameCollisionError) as exc:
+        _export(vsys, allow_name_collisions=False)
+    msg = str(exc.value)
+    assert "Vendor_eXploranceBlue_" in msg and "Vendor_eXploranceBlue" in msg
+    assert "objects/addresses" in msg and "objects/address_groups" in msg
+    assert "svc_" in msg and "objects/services" in msg
+    assert "clean_" not in msg  # no collision, not reported
+    assert sorted(exc.value.collisions) == ["Vendor_eXploranceBlue", "svc"]
+
+
+def test_normalize_collision_allowed_keeps_names_and_warns():
+    data = _export(VENDOR_VSYS)
+    names = sorted(a["name"] for a in data["objects"]["addresses"])
+    assert names == ["Vendor_eXploranceBlue_", "clean"]
+    assert data["objects"]["address_groups"][0]["static"] == ["Vendor_eXploranceBlue_"]
+    warns = [w for w in _name_warnings(data) if w["severity"] == "warn"]
+    assert len(warns) == 1 and "Vendor_eXploranceBlue_" in warns[0]["message"]
+
+
+def test_no_collision_unaffected_by_guard():
+    data = _export('<address><entry name="a_"><ip-netmask>1.1.1.1/32</ip-netmask></entry></address>')
+    assert [a["name"] for a in data["objects"]["addresses"]] == ["a"]
+
+
+def test_default_mode_never_raises_on_would_be_collision():
+    data = _export(VENDOR_VSYS, normalize_names=False)
+    assert len(data["objects"]["addresses"]) == 2
+
+
+def test_cli_allow_name_collisions_flag(monkeypatch):
+    import panparser
+
+    monkeypatch.setattr("sys.argv", ["panparser", "cfg.xml"])
+    assert panparser.parse_args().allow_name_collisions is False
+    monkeypatch.setattr("sys.argv", ["panparser", "cfg.xml", "--allow-name-collisions"])
+    assert panparser.parse_args().allow_name_collisions is True
+
+
+def test_main_exits_nonzero_listing_collisions_and_writes_nothing(
+    monkeypatch, tmp_path, capsys
+):
+    import panparser
+
+    cfg = tmp_path / "c.xml"
+    cfg.write_text(
+        "<config version='11.1.0'><devices><entry name='localhost.localdomain'>"
+        "<vsys><entry name='vsys1'>" + VENDOR_VSYS + "</entry></vsys></entry></devices></config>",
+        encoding="utf-8",
+    )
+    out = tmp_path / "o.json"
+    monkeypatch.setattr(
+        "sys.argv", ["panparser", str(cfg), "--output", str(out), "--normalize-names"]
+    )
+    with pytest.raises(SystemExit) as exc:
+        panparser.main()
+    assert exc.value.code == 1
+    err = capsys.readouterr().err
+    assert "Vendor_eXploranceBlue_" in err and "--allow-name-collisions" in err
+    assert not out.exists()
+
+
+def test_main_allow_name_collisions_succeeds(monkeypatch, tmp_path):
+    import panparser
+
+    cfg = tmp_path / "c.xml"
+    cfg.write_text(
+        "<config version='11.1.0'><devices><entry name='localhost.localdomain'>"
+        "<vsys><entry name='vsys1'>" + VENDOR_VSYS + "</entry></vsys></entry></devices></config>",
+        encoding="utf-8",
+    )
+    out = tmp_path / "o.json"
+    monkeypatch.setattr(
+        "sys.argv",
+        ["panparser", str(cfg), "--output", str(out), "--normalize-names",
+         "--allow-name-collisions"],
+    )
+    with pytest.raises(SystemExit) as exc:
+        panparser.main()
+    assert exc.value.code == 0
+    assert out.exists()

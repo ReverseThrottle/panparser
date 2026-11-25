@@ -193,6 +193,13 @@ named object is renamed `foo_` -> `foo`, references are rewritten export-wide, a
 skipped (with a `migration_warnings` entry) when the stripped name already exists or would be
 ambiguous.
 
+By default `--normalize-names` **fails** if two or more distinct names would normalize to the same
+name (e.g. address `Foo_` and address group `Foo`, which share one SCM namespace, or `foo_` and
+`foo__`): every colliding group is listed with its source names and collections on stderr, the
+exit code is 1, and no file is written. Pass `--allow-name-collisions` to instead keep the
+colliding names unchanged and record a `migration_warnings` entry. Collisions are detected on
+names export-wide, so a rule named `x_` and an address named `x` also count.
+
 The exporter prints a summary to stderr on completion:
 
 ```

@@ -92,6 +92,59 @@ def _normalize_name(name: str) -> str:
     return name.rstrip("_")
 
 
+class NameCollisionError(ValueError):
+    """--normalize-names would map two or more distinct names to one name.
+
+    ``collisions`` maps each normalized name to the sorted list of
+    ``(source_name, collection_path)`` pairs that produce it.
+    """
+
+    def __init__(self, collisions: dict[str, list[tuple[str, str]]]):
+        self.collisions = collisions
+        lines = [
+            f"--normalize-names would merge distinct names "
+            f"({len(collisions)} collision group(s)):"
+        ]
+        for target, sources in sorted(collisions.items()):
+            shown = repr(target) if target else "<empty name>"
+            lines.append(f"  {shown} <- " + ", ".join(
+                f"{name!r} ({path})" for name, path in sources))
+        super().__init__("\n".join(lines))
+
+
+def _iter_named_objects_at(data, path: str = ""):
+    """Like _iter_named_objects, but yields (collection_path, item)."""
+    if isinstance(data, dict):
+        for key, value in data.items():
+            yield from _iter_named_objects_at(
+                value, f"{path}/{key}" if path else key)
+    elif isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict) and isinstance(item.get("name"), str):
+                yield path, item
+
+
+def _find_name_collisions(pairs) -> dict[str, list[tuple[str, str]]]:
+    """Group (collection_path, item) pairs by normalized name.
+
+    A collision is a normalized name produced by two or more DISTINCT source
+    names (e.g. 'foo' and 'foo_'), or an empty normalized name. The same
+    source name appearing in several collections (address + address-group)
+    is not itself a collision, but those entries are listed alongside any
+    real one because SCM shares a namespace between them. Names are compared
+    export-wide, matching how _apply_renames rewrites references.
+    """
+    by_target: dict[str, set[tuple[str, str]]] = {}
+    for path, item in pairs:
+        by_target.setdefault(_normalize_name(item["name"]), set()).add(
+            (item["name"], path))
+    return {
+        target: sorted(sources)
+        for target, sources in by_target.items()
+        if not target or len({n for n, _ in sources}) > 1
+    }
+
+
 def _iter_named_objects(data):
     """Yield every named collection item in the export (#93).
 
@@ -275,12 +328,16 @@ def build_export(
     vsys: str,
     normalize_names: bool = False,
     device_group: DeviceGroupScope | None = None,
+    allow_name_collisions: bool = False,
 ) -> dict:
     """Assemble the full export dict from all getter functions.
 
     Object names are preserved exactly as in the source config. With
     ``normalize_names=True``, trailing underscores are stripped from named
-    objects and references are rewritten export-wide (see #93).
+    objects and references are rewritten export-wide (see #93). If two or
+    more distinct names would normalize to the same name, NameCollisionError
+    is raised listing every group; ``allow_name_collisions=True`` instead
+    keeps the colliding names unchanged and adds a 'warn' migration warning.
 
     ``device_group`` (a parsers._devicegroup.DeviceGroupScope) switches to
     Panorama device-group mode: ``vsys_root`` is the merged device-group
@@ -984,6 +1041,9 @@ def build_export(
     rename_map: dict[str, str] = {}
     skipped: list[str] = []
     if normalize_names:
+        collisions = _find_name_collisions(_iter_named_objects_at(data))
+        if collisions and not allow_name_collisions:
+            raise NameCollisionError(collisions)
         rename_map, skipped = _build_rename_map(list(_iter_named_objects(data)))
     if rename_map:
         warnings.append({
