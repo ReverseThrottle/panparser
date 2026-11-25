@@ -149,6 +149,12 @@ def parse_args() -> argparse.Namespace:
         help="With --output: strip trailing underscores from object names and "
              "rewrite references (default: names are preserved exactly).",
     )
+    parser.add_argument(
+        "--allow-name-collisions", action="store_true",
+        help="With --normalize-names: instead of failing when distinct names "
+             "would normalize to the same name, keep those names unchanged "
+             "and emit a migration warning.",
+    )
     args = parser.parse_args()
     if args.device_group is not None and args.vsys is not None:
         parser.error("--device-group and --vsys are mutually exclusive "
@@ -275,6 +281,11 @@ def main() -> None:
             "Warning: --normalize-names only applies with --output; ignoring.",
             file=sys.stderr,
         )
+    if args.allow_name_collisions and not args.normalize_names:
+        print(
+            "Warning: --allow-name-collisions only applies with --normalize-names; ignoring.",
+            file=sys.stderr,
+        )
 
     root = load_config(args.config)
     device_scope = None
@@ -299,7 +310,7 @@ def main() -> None:
 
     # --output: write JSON export and exit; do not start the display pipeline
     if args.output:
-        from export.writer import build_export, write_export
+        from export.writer import NameCollisionError, build_export, write_export
         # Overwrite guard applies to existing files only. A directory is never
         # overwriteable, so don't advise --force for it — let write_export raise
         # IsADirectoryError, caught below as a clean boundary error (issue #99).
@@ -313,12 +324,23 @@ def main() -> None:
                 file=sys.stderr,
             )
             sys.exit(1)
-        data = build_export(
-            root, vsys_root, shared_root, network_root,
-            source_file=args.config, vsys=args.vsys,
-            normalize_names=args.normalize_names,
-            device_group=device_scope,
-        )
+        try:
+            data = build_export(
+                root, vsys_root, shared_root, network_root,
+                source_file=args.config, vsys=args.vsys,
+                normalize_names=args.normalize_names,
+                device_group=device_scope,
+                allow_name_collisions=args.allow_name_collisions,
+            )
+        except NameCollisionError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            print(
+                "No export written. Rename the colliding objects in the source "
+                "config, drop --normalize-names, or pass --allow-name-collisions "
+                "to keep the colliding names unchanged.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
         try:
             write_export(data, args.output)
         except OSError as e:
